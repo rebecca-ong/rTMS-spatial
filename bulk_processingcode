@@ -1,0 +1,33 @@
+---
+title: "Bulk RNA-seq analysis (iTBS vs. cTBS vs. sham)"
+author: "Rebecca Ong"
+date: "02/11/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(GenomicFeatures)
+library(rtracklayer)
+library(S4Vectors)
+library(Rsamtools)
+library(GenomicAlignments)
+library(BiocParallel)
+library(pheatmap)
+library(RColorBrewer)
+library(AnnotationDbi)
+library(org.Mm.eg.db)
+library(genefilter)
+library(ggplot2)
+library(ggrepel)
+library(clusterProfiler)
+library(DOSE)
+library(dplyr)
+library(tidyr)
+library(Rgraphviz)
+library(enrichplot)
+library(stringr)
+library(DESeq2)
+library(ggupset)
+```
