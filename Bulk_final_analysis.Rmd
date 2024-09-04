@@ -1,0 +1,402 @@
+---
+title: "Bulk RNA-seq analysis (iTBS vs. cTBS vs. sham)"
+author: "Rebecca Ong"
+date: "02/11/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(GenomicFeatures)
+library(rtracklayer)
+library(S4Vectors)
+library(Rsamtools)
+library(GenomicAlignments)
+library(BiocParallel)
+library(pheatmap)
+library(RColorBrewer)
+library(AnnotationDbi)
+library(org.Mm.eg.db)
+library(genefilter)
+library(ggplot2)
+library(ggrepel)
+library(clusterProfiler)
+library(DOSE)
+library(dplyr)
+library(tidyr)
+library(Rgraphviz)
+library(enrichplot)
+library(stringr)
+library(DESeq2)
+library(ggupset)
+```
+
+# Data Import
+A '.csv' sample info table was created and loaded into R. STAR aligned files were then locaated and BAM files to be used for counting was specified.
+```{r}
+csvfile <- file.path("/bulkrtms/Raw_files_AGRF_CAGRF220711399_HVKMLDSX3", "Sample_table.csv")
+sampleTable <- read.csv(csvfile,row.names = 1)
+sampleTable
+sampleTable$IDntreatment <- c('B001_iTBS', 'B002_cTBS','B003_iTBS', 'B004_sham', 'B005_cTBS', 'B006_sham', 'B007_sham', 'B008_cTBS', 'B009_iTBS', 'B010_iTBS', 'B011_iTBS', 'B012_cTBS', 'B013_cTBS', 'B014_sham', 'B015_sham')
+setwd("/bulkrtms/Merged_files/alignment_adjusted")
+aligned_dir <- file.path("/bulkrtms/Merged_files/alignment_adjusted")
+list.files(aligned_dir)
+filenames <- file.path(aligned_dir, paste0(sampleTable$SampleID, "Aligned.sortedByCoord.out.bam"))
+file.exists(filenames)
+bamfile <- BamFileList(filenames)
+seqinfo(bamfile[[1]])
+```
+
+## Reference genome annotation
+Import the mouse reference genome for annotation
+```{r}
+GTFfile <- file.path("/bulkrtms/referencegenome", "Mus_musculus.GRCm39.107.gtf")
+txdb <- makeTxDbFromGFF(GTFfile, format="gtf", circ_seqs = character())
+exonsbygene <- exonsBy(txdb, by = 'gene')
+exonsbygene
+```
+
+## Read counting
+Read counting step. In this step, we generate a 'SummarizedExperiment' object that sumarrises the RNA-seq experiment. 
+  - Each sample is in the column -> colData(se)
+  - Each gene is contain in the rows -> rowData(se) lists the p values and log changes of each ene after differential expression analysis
+```{r}
+register(SerialParam())
+se <- summarizeOverlaps(features=exonsbygene, reads = bamfile, mode = "Union", singleEnd=FALSE, ignore.strand = TRUE, fragment=FALSE)
+colnames(se) <- sampleTable$IDntreatment
+se
+dim(se)
+assayNames(se)
+head(assay(se),3)
+colSums(assay(se))
+rowRanges(se)
+colData(se)
+se$SampleID
+se$Treatment
+```
+
+## The DESeqDataSet
+From the 'SummarizedExperiment', we can create a 'DESeqDataSet' to store the read counts and intermediate estimated quantities during the statistical analysis from the DESeq2 package.
+```{r}
+dds <- DESeqDataSet(se, design = ~ Treatment)
+dds
+```
+
+Before we perform differential expression analysis, it is useful to filer out low count genes at this point. Remove rows where there are few reads. Here, we keep only rows that have more than 0 reads.
+```{r}
+dds <- dds[ rowSums(counts(dds)) > 0, ]
+dds
+```
+
+Next we need to tell the DESeq2 function the reference level that we want to compare against (i.e., the level that represents the control group). If you don't define the reference level, the comparisons will be made based on the aplhabetical order of the level.
+```{r}
+dds$Treatment <- relevel(dds$Treatment, ref = "sham")
+nrow(dds)
+```
+
+# Data Quality Assessment
+Because the purpose of this analysis is to detect deferentially expressed genes, we need to have a look at the quality of the data set for particular samples that may have abnormalities due to slight differences in the experimental treatment/protocol.
+
+## Bar plot of library sizes
+We can check how many reads we have for each sample. We can see that B009(iTBS) has a much smaller library size in comparison to the other samples.
+```{r}
+librarySizes <- colSums(assay(dds))
+dds$IDntreatment
+barplot(librarySizes/1e06, names=dds$SampleID, las = 2, cex.names = 0.8, xlab = "Samples", ylab = "Library size (millions)", main = "Barplot of library sizes")
+```
+## Log2 of counts
+Count data is not normally distributed so to estimate the distribution of raw counts, we need to log the counts.
+```{r}
+logcounts <- log2(assay(dds) + 1)
+boxplot(logcounts, xlab ="", ylab = "Log2 counts per million", las=2)
+abline(h=median(as.matrix(logcounts)), col = "blue")
+```
+## VST transformed counts box plot
+```{r}
+vsd <- vst(dds, blind = FALSE)
+head(assay(vsd),3)
+colData((vsd))
+boxplot(assay(vsd), xlab = "", ylab = "vst tranformed counts", las = 2)
+```
+
+# Differential Expression
+## PCA Plot
+Differential expression is performed on RAW counts but for downstream analysis (i.e., visualisation or clustering) it is useful to work with transformed versions of the count data (e.g., variance stabilising transformation (VST)).
+A VST transformation takes into account library size and the point is to remove the dependence of the variance on the mean.
+The 'blind' argument defined whether the transformation should be blind to the sample information. The blind = FALSE should be used if it is expected that many genes will have large differences in counts explainable by experimental design and you wish to transform the data for downstream analysis.
+```{r}
+plotPCA(vsd, intgroup = "Treatment")
+```
+Customise the PCA plots using ggplot functions
+```{r}
+PCAplot <- plotPCA(vsd, intgroup = "Treatment", returnData = TRUE)
+percentVar <- round(100 * attr(PCAplot, "percentVar"))
+ggplot(PCAplot, aes(x = PC1, y = PC2, color = Treatment)) + geom_point(size = 4) + xlab(paste0("PC1: ", percentVar[1], "% variance")) + ylab(paste0("PC2: ", percentVar[2], "% variance")) + coord_fixed() + scale_color_manual(values = c("grey50", "dodgerblue1", "palevioletred1"))
+```
+
+## Differential expression analysis
+The DESeq function includes all the standard differential expression analysis steps. The results table can be extracted with log2 fold changes, p values and adjusted p values.
+```{r}
+dds$Treatment <- relevel(dds$Treatment, ref='sham')
+dds <- DESeq(dds)
+```
+### DEG Results (iTBS vs sham)
+```{r}
+resultsNames(dds)
+res_iTBS <- results(dds, contrast = list("Treatment_iTBS_vs_sham"))
+res_iTBS
+res_iTBS <- data.frame(res_iTBS)
+summary(res_iTBS)
+```
+Summary of the results of differential gene expression analysis between iTBS and sham indicated that there are NO genes that are differentially expressed between the two.
+
+### DEG Results (cTBS vs sham)
+```{r}
+res_cTBS <- results(dds, contrast = list("Treatment_cTBS_vs_sham"))
+res_cTBS
+summary(res_cTBS)
+```
+Summary of the results of differential gene expression analysis between cTBS and sham indicated that there ARE genes that are differentially expressed between the two.
+
+To find the number of genes where the adjusted p-values were < 0.1 or < 0.05
+```{r}
+sum(res_cTBS$padj < 0.1, na.rm = TRUE)
+sum(res_cTBS$padj < 0.05, na.rm = TRUE)
+```
+
+### Annotating & exporting results
+```{r}
+columns(org.Mm.eg.db)
+res_cTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(res_cTBS), column = "SYMBOL", keytype = "ENSEMBL", multiVals = "first")
+res_cTBS$entrez <- mapIds(org.Mm.eg.db, keys=row.names(res_cTBS), column = "ENTREZID", keytype = "ENSEMBL", multiVals = "first")
+res_cTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(res_cTBS), column = "GENENAME", keytype = "ENSEMBL", multiVals = "first")
+
+res_iTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(res_iTBS), column = "SYMBOL", keytype = "ENSEMBL", multiVals = "first")
+res_iTBS$entrez <- mapIds(org.Mm.eg.db, keys=row.names(res_iTBS), column = "ENTREZID", keytype = "ENSEMBL", multiVals = "first")
+res_iTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(res_iTBS), column = "GENENAME", keytype = "ENSEMBL", multiVals = "first")
+```
+Can order our results table by the smallest p value
+```{r}
+res_cTBSOrdered <- res_cTBS[order(res_cTBS$pvalue),]
+head(res_cTBSOrdered)
+summary(res_cTBSOrdered)
+write.csv(res_cTBSOrdered, file = "cTBS_all_DEGs.csv")
+
+res_iTBSOrdered <- res_iTBS[order(res_iTBS$pvalue),]
+head(res_iTBSOrdered)
+summary(res_iTBSOrdered)
+write.csv(res_iTBSOrdered, file = "cTBS_all_DEGs.csv")
+```
+
+Remove all the genes with no entrez ID or name (i.e., NAs)
+```{r}
+res_cTBSOrdered_df <- data.frame(res_cTBSOrdered)
+res_cTBSOrdered_noNA <- res_cTBSOrdered_df %>% drop_na()
+summary(res_cTBSOrdered_noNA)
+write.csv(res_cTBSOrdered_noNA, file = "cTBS_all_DEGs_noNA.csv")
+
+res_iTBSOrdered_df <- data.frame(res_iTBSOrdered)
+res_iTBSOrdered_noNA <- res_iTBSOrdered_df %>% drop_na()
+write.csv(res_iTBSOrdered_noNA, file = "iTBS_all_DEGs_noNA.csv")
+```
+
+### Significant DEGs (cTBS vs sham)
+Set the significance cutoff values of padj < 0.05 and log2fc > 1
+```{r}
+res_cTBSSig <- subset(res_cTBSOrdered, padj <= 0.05 & abs(log2FoldChange) >= 1)
+res_cTBSSig
+summary(res_cTBSSig)
+write.csv(res_cTBSSig, file = "cTBS_Sig_0.05_FC1.csv")
+# remove all Sig genes with NA
+res_cTBSSig_noNA <- subset(res_cTBSOrdered_noNA, padj < 0.05 & abs(log2FoldChange) > 1)
+summary(res_cTBSSig_noNA)
+write.csv(res_cTBSSig_noNA, file = "cTBS_Sig_0.05_FC1_noNA.csv")
+```
+Change significance values to just padj <= 0.05 (don't set a cutoff for FC)
+```{r}
+res_cTBSSig <- subset(res_cTBSOrdered, padj <= 0.05)
+res_cTBSSig
+summary(res_cTBSSig)
+res_cTBSSig_noNA <- data.frame(res_cTBSSig)
+res_cTBSSig_noNA <- res_cTBSSig_noNA %>% drop_na()
+write.csv(res_cTBSSig_noNA, file = "cTBS_Sig_0.05_noNA.csv")
+```
+Perform GO analysis on genes with only padj significance cutoff
+```{r}
+cTBS_geneList <- res_cTBSSig_noNA[,2]
+names(cTBS_geneList) <- as.character(res_cTBSSig_noNA[,8])
+cTBS_geneList <- sort(cTBS_geneList, decreasing = TRUE)
+de <- names(cTBS_geneList)
+cTBS_CC <- enrichGO(de, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "MF", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+write.csv(as.data.frame(cTBS_CC),"GO enrich CC.csv",row.names =F)
+```
+### Significant DEGs (iTBS vs sham)
+Set the significance cutoff values of padj < 0.05 and log2fc > 1
+```{r}
+res_iTBSSig <- subset(res_iTBSOrdered, padj <= 0.05 & abs(log2FoldChange) >= 0.5)
+res_iTBSSig
+summary(res_iTBSSig)
+```
+
+# Exploring results
+## MA Plot
+```{r}
+plotMA(res_cTBS, ylim=c(-2,2)) + title("MA plot of log2 fold changes - cTBS vs sham")
+plotMA(res_iTBS, ylim=c(-2,2)) + title("MA plot of log2 fold changes - iTBS vs sham")
+```
+We can also shink the LFC (effect size) as it is useful for visualisation and ranking of genes
+```{r}
+res_cTBS_LFC <- lfcShrink(dds, coef = "Treatment_cTBS_vs_sham", type = 'apeglm')
+plotMA(res_cTBS_LFC, ylim=c(-2,2)) + title("MA plot of shrunken log2 fold changes - cTBS vs sham")
+res_iTBS_LFC <- lfcShrink(dds, coef = "Treatment_iTBS_vs_sham", type = 'apeglm')
+plotMA(res_iTBS_LFC, ylim=c(-2,2)) + title("MA plot of shrunken log2 fold changes - iTBS vs sham")
+```
+
+## Heatmap of first 1000 DEGs (cTBS)
+```{r}
+topVarGenes <- head(order(rowVars(assay(vsd)), decreasing = TRUE), 1000)
+mat <- assay(vsd)[topVarGenes,]
+mat <- mat - rowMeans(mat)
+anno <- as.data.frame(colData(vsd)[,c("Treatment","SampleID")])
+pheatmap(mat, clusters_cols = FALSE, fontsize_row = 5, scale = "row", color = colorRampPalette(c("green","black","red"))(100), annotation_col = anno)
+
+# remove iTBS samples to create a heatmap of the first 1000 DEGs between cTBS and sham only
+mat <- subset(mat, select = -c(1, 3, 9 ,11, 10))
+anno <- as.data.frame(colData(vsd)["Treatment"])
+pheatmap(mat, clusters_cols = FALSE, fontsize_row = 5, scale = "row", color = colorRampPalette(c("green","black","red"))(100), annotation_col = anno)
+
+# remove iTBS samples to create a heatmap of the first 1000 DEGs between cTBS and sham only
+mat <- subset(mat, select = -c(1, 3, 9 ,11, 10))
+anno <- as.data.frame(colData(vsd)["Treatment"])
+pheatmap(mat, clusters_cols = FALSE, fontsize_row = 5, scale = "row", color = colorRampPalette(c("green","black","red"))(100), annotation_col = anno)
+```
+
+## Heatmap of first 1000 DEGs (iTBS)
+```{r}
+topVarGenes_iTBS <- head(order(rowVars(assay(vsd)), decreasing = TRUE), 1000)
+mat_iTBS <- assay(vsd)[topVarGenes,]
+mat_iTBS <- mat_iTBS - rowMeans(mat_iTBS)
+anno_iTBS <- as.data.frame(colData(vsd)[,c("Treatment","SampleID")])
+pheatmap(mat_iTBS, clusters_cols = FALSE, fontsize_row = 5, scale = "row", color = colorRampPalette(c("green","black","red"))(100), annotation_col = anno_iTBS)
+
+# remove iTBS samples to create a heatmap of the first 1000 DEGs between cTBS and sham only
+mat_iTBS <- subset(mat_iTBS, select = -c(5, 13, 12 ,2 , 8))
+anno_iTBS <- as.data.frame(colData(vsd)["Treatment"])
+pheatmap(mat_iTBS, clusters_cols = FALSE, fontsize_row = 5, scale = "row", color = colorRampPalette(c("green","black","red"))(100), annotation_col = anno_iTBS)
+```
+
+## Heatmap of signifanct DEGs (cTBS)
+```{r}
+matSig <- assay(vsd[row.names(res_cTBSSig)])
+pheatmap(matSig, fontsize_row = 4, scale = "row", color = colorRampPalette(rev(brewer.pal(11, "RdBu")))(255), annotation_col = anno, main = "Heatmap of significant DEGs - cTBS vs sham")
+row.names(res_cTBSSig)
+```
+
+## Volcano plot (cTBS)
+Create a volcano plot labeling the top significant genes following cTBS stimulation
+```{r}
+res_cTBSOrdered_df <- res_cTBSOrdered_df %>% 
+  mutate(
+    Expression = case_when(log2FoldChange >= 1 & padj <= 0.05 ~ "Up-regulated",
+                           log2FoldChange <= -1 & padj <= 0.05 ~ "Down-regulated",
+                           TRUE ~ "Unchanged")
+  )
+# without labels
+cTBS_volcano <- ggplot(res_cTBSOrdered_df, aes(log2FoldChange, -log(padj,10))) + geom_point(aes(color = Expression), size = 2.5) + xlab(expression("log"[1]*"FC")) + ylab(expression("-log"[10]*"padj")) + scale_color_manual(values = c("tomato2", "gray50", "yellowgreen")) + guides(colour = guide_legend(override.aes = list(size=1.5))) + xlim(-5,5)
+cTBS_volcano
+
+cTBS_volcano_lines <- cTBS_volcano + geom_vline(xintercept = c(-1, 1), color = 'black', linetype = 2, size = 0.5) +  geom_hline(yintercept = -log10(0.05), color = 'black', linetype = 2, size = 0.5)
+cTBS_volcano_lines
+cTBS_volcano_lines <- cTBS_volcano + geom_hline(yintercept = -log10(0.05), color = 'black', linetype = 2, size = 0.5)
+cTBS_volcano_lines
+```
+#### Volcano plot with labels of sig genes
+```{r}
+# in the cTBS data frame, we previously made a column titled 'Expression' that indicates whether the genes are up or down regulated or have no change.
+# Add a new column that will contain the names of genes differentially expressed
+res_cTBSOrdered_df$delabel <- NA
+res_cTBSOrdered_df$delabel[res_cTBSOrdered_df$Expression != "Unchanged"] <- res_cTBSOrdered_df$symbol[res_cTBSOrdered_df$Expression != "Unchanged"]
+
+# with gene labels
+cTBS_volcano <- ggplot(res_cTBSOrdered_df, aes(log2FoldChange, -log(padj,10), label = delabel)) +  geom_label_repel(nudge_y = 0.2, nudge_x = -0.2) + geom_point(aes(color = Expression), size = 2) + xlab(expression("log"[1]*"FC")) + ylab(expression("-log"[10]*"padj")) + scale_color_manual(values = c("lightskyblue2", "gray50", "tomato2")) + guides(colour = guide_legend(override.aes = list(size=1.5))) + xlim(-5,5)
+cTBS_volcano
+
+# Set particular columns in the data frame to be null
+res_cTBSOrdered_df$delabel[] <- NA
+```
+
+## Volcano plot (iTBS)
+```{r}
+res_iTBSOrdered_df <- res_iTBSOrdered_df %>% 
+  mutate(
+    Expression = case_when(log2FoldChange >= 1 & padj <= 0.05 ~ "Up-regulated",
+                           log2FoldChange <= -1 & padj <= 0.05 ~ "Down-regulated",
+                           TRUE ~ "Unchanged")
+  )
+# without labels
+iTBS_volcano <- ggplot(res_iTBSOrdered_df, aes(log2FoldChange, -log(padj,10))) + geom_point(aes(color = Expression), size = 2.5) + xlab(expression("log"[1]*"FC")) + ylab(expression("-log"[10]*"padj")) + scale_color_manual(values = c("gray50", "gray50", "gray50")) + guides(colour = guide_legend(override.aes = list(size=1.5))) + xlim(-5,5) + ylim(0,4)
+iTBS_volcano
+
+iTBS_volcano_lines <- iTBS_volcano + geom_vline(xintercept = c(-1, 1), color = 'black', linetype = 2, size = 0.5) +  geom_hline(yintercept = -log10(0.05), color = 'black', linetype = 2, size = 0.5)
+iTBS_volcano_lines
+```
+
+
+If we want to know how many genes are up- or down-regulated or unchanged
+```{r}
+res_cTBSOrdered_df %>% 
+  count(Expression)
+```
+
+## GO analysis
+Identify the pathways that are differentially expressed following cTBS
+'res_cTBSSig_noNA' contains a list of the significant differentially expressed genes where all the NA values have been removed.
+EntrezID in column 8
+log2FC in column 2
+```{r}
+cTBS_geneList <- res_cTBSOrdered_noNA[,2]
+names(cTBS_geneList) <- as.character(res_cTBSOrdered_noNA[,8])
+cTBS_geneList <- sort(cTBS_geneList, decreasing = TRUE)
+de <- names(cTBS_geneList)
+```
+Perform the GO enrichment analysis
+```{r}
+cTBS_CC <- enrichGO(de, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "BP", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+write.csv(as.data.frame(cTBS_CC),"GO enrich CC.csv",row.names =F)
+```
+NOTE: there were no GO pathways identified when performing GO analysis on SIGNIFICANT differentially expressed genes following cTBS
+
+### GO analysis (using all DEGs)
+```{r}
+cTBS_geneList_all <- res_cTBSOrdered_noNA[,2]
+names(cTBS_geneList_all) <- as.character(res_cTBSOrdered_noNA[,8])
+cTBS_geneList_all <- sort(cTBS_geneList_all, decreasing = TRUE)
+de <- names(cTBS_geneList_all)
+
+cTBS_BP <- enrichGO(de, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "BP", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+write.csv(as.data.frame(cTBS_BP),"cTBS_GO_BP.csv",row.names =F)
+
+cTBS_CC <- enrichGO(de, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "CC", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+write.csv(as.data.frame(cTBS_CC),"cTBS_GO_CC.csv",row.names =F)
+
+cTBS_MF <- enrichGO(de, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "MF", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+write.csv(as.data.frame(cTBS_MF),"cTBS_GO_MF.csv",row.names =F)
+```
+
+### GO plot bar chart
+```{r}
+barplot(cTBS_BP, showCategory = 10)
+
+cTBS_allGO <- enrichGO(de, OrgDb = "org.Mm.eg.db", ont="all")
+dotplot(cTBS_allGO , split="ONTOLOGY") + facet_grid(ONTOLOGY~., scale="free")
+```
+
+
+# Subsetting out particular conditions
+```{r}
+res_cTBSSig_sub <- res_cTBSSig[,res_cTBSSig %in% c("cTBS", "sham")]
+```
+
+
