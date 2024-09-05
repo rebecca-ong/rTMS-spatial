@@ -1,0 +1,459 @@
+---
+title: "STUtility Spatial Analysis (all samples) - Normalisation, QC and Clustering"
+author: "Rebecca Ong"
+date: "05/11/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = FALSE)
+library(Seurat)
+library(STutility)
+library(hdf5r)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(RColorBrewer)
+library(SC3)
+library(pander)
+library(Palo)
+```
+
+# Install packages
+```{r}
+install.packages('Seurat')
+install.packages("devtools")
+devtools::install_github("jbergenstrahle/STUtility")
+install.packages('hdf5r')
+install.packages('ggplot2')
+install.packages('tidyr')
+install.packages('dplyr')
+install.packages('RColorBrewer')
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("SC3")
+install.packages("pander")
+if (!require("devtools"))
+  install.packages("devtools")
+devtools::install_github("Winnie09/Palo")
+```
+ 
+# Load data (spaceranger outputs)
+Create a data.frame that contains all the paths to the required input files for all 8 samples (4 sham and 4 iTBS)
+```{r}
+sampleNames <- c('sham1', 'sham2', 'sham3', 'sham4', 'stim1', 'stim2', 'stim3', 'stim4')
+infoTable <- data.frame(sampleNames)
+rownames(infoTable) <- sampleNames
+infoTable$samples <- c('/home/spaceranger/ALLoutputs/sham1/outs/filtered_feature_bc_matrix.h5', '/home/spaceranger/ALLoutputs/sham2/outs/filtered_feature_bc_matrix.h5', '/home/spaceranger/ALLoutputs/sham3/outs/filtered_feature_bc_matrix.h5', '/home/spaceranger/ALLoutputs/sham4/outs/filtered_feature_bc_matrix.h5', '/home/spaceranger/ALLoutputs/stim1/outs/filtered_feature_bc_matrix.h5', '/home/spaceranger/ALLoutputs/stim2/outs/filtered_feature_bc_matrix.h5', '/home/spaceranger/ALLoutputs/stim3/outs/filtered_feature_bc_matrix.h5', '/home/spaceranger/ALLoutputs/stim4/outs/filtered_feature_bc_matrix.h5')
+infoTable$spotfiles <- c('/home/spaceranger/ALLoutputs/sham1/outs/spatial/tissue_positions_list.csv', '/home/spaceranger/ALLoutputs/sham2/outs/spatial/tissue_positions_list.csv', '/home/spaceranger/ALLoutputs/sham3/outs/spatial/tissue_positions_list.csv', '/home/spaceranger/ALLoutputs/sham4/outs/spatial/tissue_positions_list.csv', '/home/spaceranger/ALLoutputs/stim1/outs/spatial/tissue_positions_list.csv', '/home/spaceranger/ALLoutputs/stim2/outs/spatial/tissue_positions_list.csv', '/home/spaceranger/ALLoutputs/stim3/outs/spatial/tissue_positions_list.csv', '/home/spaceranger/ALLoutputs/stim4/outs/spatial/tissue_positions_list.csv')
+infoTable$imgs <- c('/home/spaceranger/ALLoutputs/sham1/outs/spatial/tissue_hires_image.png', '/home/spaceranger/ALLoutputs/sham2/outs/spatial/tissue_hires_image.png', '/home/spaceranger/ALLoutputs/sham3/outs/spatial/tissue_hires_image.png', '/home/spaceranger/ALLoutputs/sham4/outs/spatial/tissue_hires_image.png', '/home/spaceranger/ALLoutputs/stim1/outs/spatial/tissue_hires_image.png', '/home/spaceranger/ALLoutputs/stim2/outs/spatial/tissue_hires_image.png', '/home/spaceranger/ALLoutputs/stim3/outs/spatial/tissue_hires_image.png', '/home/spaceranger/ALLoutputs/stim4/outs/spatial/tissue_hires_image.png')
+infoTable$json <- c('/home/spaceranger/ALLoutputs/sham1/outs/spatial/scalefactors_json.json', '/home/spaceranger/ALLoutputs/sham2/outs/spatial/scalefactors_json.json', '/home/spaceranger/ALLoutputs/sham3/outs/spatial/scalefactors_json.json', '/home/spaceranger/ALLoutputs/sham4/outs/spatial/scalefactors_json.json', '/home/spaceranger/ALLoutputs/stim1/outs/spatial/scalefactors_json.json', '/home/spaceranger/ALLoutputs/stim2/outs/spatial/scalefactors_json.json', '/home/spaceranger/ALLoutputs/stim3/outs/spatial/scalefactors_json.json', '/home/spaceranger/ALLoutputs/stim4/outs/spatial/scalefactors_json.json')
+```
+
+Create a Seurat object using the infoTable
+```{r}
+se <- InputFromTable(infotable = infoTable,
+                     minUMICountsPerGene = 100,
+                     minGenesPerSpot = 5,
+                     minSpotsPerGene = 500,
+                     platform = "Visium")
+```
+
+## Loading H&E images into STUtility
+```{r}
+se <- LoadImages(se, time.resolve = FALSE, verbose= TRUE)
+ImagePlot(se, method = "raster", type = "raw")
+```
+
+## Add sample identities into the Seurat object
+```{r}
+se$sample <- paste0("sample_", GetStaffli(se)[[,"sample", drop = T]])
+for(i in 1:length(sampleNames)){
+  temp = which(GetStaffli(se)[[,'sample']] ==i)
+  se$sample[temp] = sampleNames[i]
+}
+```
+
+## Add treatment identities into the Seurat object
+```{r}
+treatment <- c('sham', 'sham', 'sham', 'sham', 'stim', 'stim', 'stim', 'stim')
+se$treatment <- paste0("treatment_", GetStaffli(se)[[,"sample", drop = T]])
+for(i in 1:length(treatment)){
+  temp = which(GetStaffli(se)[[,"sample"]] ==i)
+  se$treatment[temp] = treatment[i]
+}
+```
+
+To look at the spatial distribution of number of genes detected per cell (nFeature_RNA)
+```{r}
+ST.FeaturePlot(object = se, features = c("nCount_RNA"), ncol = 2, pt.size = 1.3)
+FeatureOverlay(se, features ="nFeature_RNA")
+```
+
+To look at the spatial distribution of the number of UMIs detected per cell (nCount_RNA)
+```{r}
+ST.FeaturePlot(se, features = c("nCount_RNA"), ncol = 2, pt.size = 1.3)
+```
+
+# Quality Contol
+Here we can filter the data to remove low quality spote or genes with low abundance.
+First, in order to visualise the spread of the genes/counts for all the samples we can create histogram plots.
+```{r}
+UniqueGenesPerSpot <- ggplot() + geom_histogram(data=se[[]], aes(nFeature_RNA), fill = "red", alpha = 0.7, bins = 50) + ggtitle("Unique genes per spot")
+TotalCountsPerSpot <- ggplot() + geom_histogram(data = se[[]], aes(nCount_RNA), fill = "red", alpha = 0.7, bins = 50) + ggtitle("Total counts per spots")
+gene_attr <- data.frame(nUMI = Matrix::rowSums(se@assays$RNA@counts), 
+                        nSpots = Matrix::rowSums(se@assays$RNA@counts > 0))
+TotalCountsPerGene<- ggplot() +
+  geom_histogram(data = gene_attr, aes(nUMI), fill = "red", alpha = 0.7, bins = 50) +
+  scale_x_log10() +
+  ggtitle("Total counts per gene (log10 scale)")
+
+TotalSpotsPerGene <- ggplot() +
+  geom_histogram(data = gene_attr, aes(nSpots), fill = "red", alpha = 0.7,  bins = 50) +
+  ggtitle("Total spots per gene")
+(UniqueGenesPerSpot - TotalCountsPerSpot)/(TotalCountsPerGene - TotalSpotsPerGene)
+```
+## Mitochondrial content
+Identify the proportion of mitochondrial genes per spot
+```{r}
+mt.genes <- grep(pattern = "^mt-", x = rownames(se), value = TRUE)
+se$percent.mito <- (Matrix::colSums(se@assays$RNA@counts[mt.genes,])/Matrix::colSums(se@assays$RNA@counts))*100
+ST.FeaturePlot(se, features = "percent.mito", pt.size = 1.3, ncol = 2)
+```
+
+## Ribosomal protein content
+Identify the proportion of ribosomal protein coding genes per spot
+```{r}
+ribo.genes <- grep(pattern = "^Rp1|^Rps", x = rownames(se), value = TRUE)
+se$percent.ribo <- (Matrix::colSums(se@assays$RNA@counts[ribo.genes,])/Matrix::colSums(se@assays$RNA@counts))*100
+ST.FeaturePlot(se, features = "percent.ribo", pt.size = 1.3, ncol = 2)
+```
+
+## Filtering spots
+Seems like there is a lot of high mitochondria content around the edges of the tissue. This could be sign of degrading cells (known that cells on the edges of the tissue get more damaged) rather than a biological signal. Use filtering to filter out a spots with a particular percentage of mitochondrial cells. Test several % cutoffs and plot the 'percent.mio' content to decide on a cutoff that loses you the least number of spots but gets rid of the high mitochondrial content on the tissue edges.
+```{r}
+se.subset <- SubsetSTData(se, expression = percent.mito < 30)
+cat("Spots removed: ", ncol(se) - ncol(se.subset), "\n")
+pdf("Kept spots with less than 30% mitochondrial content")
+ST.FeaturePlot(se.subset, features = "percent.mito", pt.size = 1.3, ncol = 2)
+dev.off()
+```
+
+# Normalisation
+Plot the spread of counts across samples -> identify if there are any batch effects that may contribute to differences in counts (i.e., sequencing artifact)
+```{r}
+VlnPlot(se, features = c("nFeature_RNA", "nCount_RNA"), group.by = "sample", pt.size = 0)
+VlnPlot(se, features =c("percent.mito", "percent.ribo"), pt.size = 0, group.by = "sample")
+```
+Simple Analysis workflow
+1. Normalisation with SCTranform
+2. Dimensionality reduction (PCA)
+3. UMAP embedding
+4. Clustering
+
+## Batch correction (before vs. after)
+Plot the UMAP of the sample with and without batch correction
+```{r}
+se_nobatchcorrect <- se %>%
+  SCTransform() %>%
+  RunPCA() %>%
+  RunUMAP(reduction = "pca", dims = 1:30)
+
+se_batchcorrect <- SCTransform(se, vars.to.regress = "sample")
+se_batchcorrect <- se_batchcorrect %>%
+  RunPCA() %>%
+  RunUMAP(reduction = "pca", dims = 1:30)
+p1 <- DimPlot(se_nobatchcorrect, group.by = "sample", reduction = "umap") + ggtitle("No batch correction")
+p2 <- DimPlot(se_batchcorrect, group.by = "sample", reduction = "umap") + ggtitle("Batch corrected")
+p1 - p2
+```
+
+# Optimal Clustering
+Use Clustree (Zappia & Oshlack, 2018) to decide what resolution to use when performing the clustering analysis. Package produces clustering trees -> visualises different clustering as resolution increases.
+```{r}
+library(clustree)
+```
+Make a separate Seurat object where we can test a range of different resolution values for clustering
+```{r}
+se_batchcorrect <- se_batchcorrect %>%
+  FindNeighbors(reduction = "pca", dims = 1:30) %>%
+  FindClusters() %>%
+  RunUMAP(reduction = "pca", dims = 1:30)
+se_optimalcluster <- se_batchcorrect
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 0, random.seed = 1234)
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 0.1, random.seed = 1234)
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 0.2, random.seed = 1234)
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 0.3, random.seed = 1234)
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 0.4, random.seed = 1234)
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 0.5, random.seed = 1234)
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 0.6, random.seed = 1234)
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 0.7, random.seed = 1234)
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 0.8, random.seed = 1234)
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 0.9, random.seed = 1234)
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 1, random.seed = 1234)
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 1.1, random.seed = 1234)
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 1.2, random.seed = 1234)
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 1.3, random.seed = 1234)
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 1.4, random.seed = 1234)
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 1.5, random.seed = 1234)
+se_optimalcluster <- FindClusters(se_optimalcluster, resolution = 1.6, random.seed = 1234)
+se_optimalcluster <- RunUMAP(se_optimalcluster, reduction = "pca", dims = 1:10)
+table(se_optimalcluster$SCT_snn_res.0.3, se_optimalcluster$SCT_snn_res.0.7)
+res0.3 - res0.7
+```
+The clustering information is held in the meta.data slot.
+```{r}
+head(se_optimalcluster[[]])
+```
+Plot all the different resolution of clustering for each sample
+```{r}
+res0 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.0") + ggtitle("res = 0")
+res0.1 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.0.1") + ggtitle("res = 0.1")
+res0.2 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.0.2") + ggtitle("res = 0.2")
+res0.3 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.0.3") + ggtitle("res = 0.3")
+res0.4 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.0.4") + ggtitle("res = 0.4")
+res0.5 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.0.5") + ggtitle("res = 0.5")
+res0.6 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.0.6") + ggtitle("res = 0.6")
+res0.7 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.0.7") + ggtitle("res = 0.7")
+res0.8 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.0.8") + ggtitle("res = 0.8")
+res0.9 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.0.9") + ggtitle("res = 0.9")
+res1 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.1") + ggtitle("res = 1")
+res1.1 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.1.1") + ggtitle("res = 1.1")
+res1.2 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.1.2") + ggtitle("res = 1.2")
+res1.3 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.1.3") + ggtitle("res = 1.3")
+res1.4 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.1.4") + ggtitle("res = 1.4")
+res1.5 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.1.5") + ggtitle("res = 1.5")
+res1.6 <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "SCT_snn_res.1.6") + ggtitle("res = 1.6")
+```
+To show the clustering for individual sections
+```{r}
+split_section <- DimPlot(se_optimalcluster, reduction = "umap", group.by = "sample")
+split_section/ (res0.2 - res0.4)/ (res0.6 - res0.8)/ (res1 - res1.2)
+```
+
+## Cluster tree
+Choosing a resolution value for clustering. Clustree generates a clustering tree to display how different clusters are inter-related. Use a stability index (from SC3 package) to assess the stability of the cluster (i.e., a measure of how reproducible the clustering is for a different resolution).
+Stability index varies from 0 - 1 (where 1 = same cluster appears in every solution for different k clustering)
+
+```{r}
+clust_se <- clustree(se_optimalcluster, prefix = "SCT_snn_res.", node_colour = "sc3_stability", edge_width = 1, node_text_colour ="white", node_label_size = 4, layout = "tree", edge_arrow = FALSE)
+clust_se
+```
+
+## Stability score calculation
+Work out which of the clustering resolutions is the most STABLE 
+```{r}
+stability_se <- clust_se$data[,c("SCT_snn_res.", "sc3_stability")]
+
+stability_se.summary <- as.data.frame(stability_se %>%
+                                        group_by(SCT_snn_res.)%>%
+                                        summarize(mean = mean(sc3_stability),
+                                                  median = median(sc3_stability),
+                                                  sd = sd(sc3_stability),
+                                                  min = min(sc3_stability),
+                                                  max = max(sc3_stability),
+                                                  cv = sd(sc3_stability)/mean(sc3_stability)))
+rownames(stability_se.summary) <- stability_se.summary$SCT_snn_res.
+stability_se.summary$SCT_snn_res. <- NULL
+
+bestres_se_mean = rownames(stability_se.summary)[which.max(stability_se.summary$mean)]
+bestres_se_med = rownames(stability_se.summary)[which.max(stability_se.summary$median)]
+bestres_se_lowCV = rownames(stability_se.summary)[which.min(stability_se.summary$cv)]
+```
+
+We want to select the most stable clustering resolution with has a number of clusters that is also appropriate to work with.
+This code below generates a boxplot of all the different clustering resolutions and their corresponding stability. Ideally we want to pick the resolution that has the least range in their stability values. Here, res 0.3 seems to be the most stable in terms of not having a massive range.
+```{r}
+emphasize.strong.rows(c(which.max(stability_se.summary$mean),
+                      which.max(stability_se.summary$median),
+                      which.min(stability_se.summary$cv)))
+
+pander(stability_se.summary, split.cells = 5, split.table = Inf, caption = 'Spot per section', label = '10', digits = 2,justify ='center')
+
+stability_se %>% 
+  ggplot(aes(SCT_snn_res., sc3_stability)) +
+  geom_boxplot()+
+  ggtitle("Stability index for different clustering resolutions")
+```
+
+# Final Clustering
+Use a clustering resolution of 0.3 as it seems to be the most stable.
+OR try clustering resolution of 0.5.
+### PCA 
+Re-create the Seurat object with the batch correction and running the principal comonent analysis. 
+```{r}
+se_batchcorrect <- SCTransform(se, vars.to.regress = "sample")
+se_batchcorrect <- RunPCA(se_batchcorrect)
+DimPlot(se_batchcorrect, reduction = "pca")
+DimHeatmap(se_batchcorrect, dims = 1:10, cells = 500, balanced = TRUE)
+```
+An Elbow plot is a ranking of the principal components based on the percentage of variance explained by each PC.
+```{r}
+ElbowPlot(se_batchcorrect, ndims = 30)
+```
+
+### Clustering - 0.3 resolution
+```{r}
+se_batchcorrect <- FindNeighbors(object = se_batchcorrect, verbose = FALSE, reduction = "pca", dims = 1:30)
+se_batchcorrect_0.3 <- FindClusters(object = se_batchcorrect, verbose = FALSE, resolution = 0.3)
+table(se_batchcorrect_0.3$SCT_snn_res.0.3)
+table(se_batchcorrect_0.3$seurat_clusters)
+n <- 10
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+ST.FeaturePlot(object = se_batchcorrect_0.3, features = "seurat_clusters", cols = col_vector, pt.size = 1, ncol = 2)
+```
+You can also split the view to view only one cluster at a time on the section
+```{r}
+spatial_plot <- ST.FeaturePlot(object = se_batchcorrect, features = "seurat_clusters", pt.size = 1, split.labels = T, indices = 1, show.sb = FALSE, ncol = 5)
+```
+
+### Clustering - 0.5 resolution
+At this resolution, you can't see the breakdown of clusters between different cortical regions (e.g., differences between mtoro and sensory cortex).
+```{r}
+se_batchcorrect <- FindNeighbors(object = se_batchcorrect, verbose = FALSE, reduction = "pca", dims = 1:30)
+se_batchcorrect_0.5 <- FindClusters(object = se_batchcorrect, verbose = FALSE, resolution = 0.5)
+table(se_batchcorrect_0.5$SCT_snn_res.0.5)
+table(se_batchcorrect_0.5$seurat_clusters) # 16 total clusters
+
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+ST.FeaturePlot(object = se_batchcorrect_0.5, features = "seurat_clusters", cols = col_vector, pt.size = 1, ncol = 2)
+
+# split cluster view
+spatial_plot_0.5 <- ST.FeaturePlot(object = se_batchcorrect_0.5, features = "seurat_clusters", pt.size = 1, split.labels = T, indices = 1, show.sb = FALSE, ncol = 5)
+```
+
+### Clustering - 0.6 resolution
+At this resolution, pulls out layer 4 in the sensory cortex -> visible differences between motor and sensory.
+```{r}
+se_batchcorrect <- FindNeighbors(object = se_batchcorrect, verbose = FALSE, reduction = "pca", dims = 1:30)
+se_batchcorrect_0.6 <- FindClusters(object = se_batchcorrect, verbose = FALSE, resolution = 0.6)
+table(se_batchcorrect_0.6$SCT_snn_res.0.6)
+table(se_batchcorrect_0.6$seurat_clusters)
+
+ST.FeaturePlot(object = se_batchcorrect_0.6, features = "seurat_clusters", cols = col_vector, pt.size = 1, ncol = 2)
+se_0.6_Clusters <- ST.FeaturePlot(object = se_batchcorrect_0.6, features = "seurat_clusters", pt.size = 3, ncol = 2, indices = c(4,8), cols = col_vector)
+se_0.6_Clusters
+
+se_0.6_SplitClusters <- ST.FeaturePlot(object = se_batchcorrect_0.6, features = "seurat_clusters", pt.size = 1, split.labels = T, indices = 1, show.sb = FALSE, ncol = 5)
+se_0.6_Clusters - se_0.6_SplitClusters
+```
+
+## Plot specific genes of interest
+```{r}
+heatmap.colors <- c("lightgray", "mistyrose", "red", "dark red", "black")
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Slc6a9", cols = heatmap.colors, ncol = 2, indices = c(4,8,2,7), pt.size = 1.5)
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Sst", cols = heatmap.colors, ncol = 2, indices = c(4,8,2,7), pt.size = 1.5)
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Npy", cols = heatmap.colors, ncol = 2, indices = c(4,8,2,7), pt.size = 1.5)
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Tubb4a", cols = heatmap.colors, ncol = 2, indices = c(4,8,2,7), pt.size = 1.5)
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Uba52", cols = heatmap.colors, ncol = 2, pt.size = 1.5)
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Mbp", cols = heatmap.colors, indices = c(4,8), sb.size = 8, ncol = 2, pt.size = 2)
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Mobp", cols = heatmap.colors, indices = c(4,8), sb.size = 8, ncol = 2, pt.size = 2)
+```
+
+# Genes for significant piece of writing
+```{r}
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Mbp", cols = heatmap.colors, indices = c(4,8), sb.size = 8, ncol = 2, pt.size = 2)
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Mobp", cols = heatmap.colors, indices = c(4,8), sb.size = 8, ncol = 2, pt.size = 2)
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Bc1", cols = heatmap.colors, indices = c(4,8), sb.size = 8, ncol = 2, pt.size = 2)
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Pcp4", cols = heatmap.colors, indices = c(4,8), sb.size = 8, ncol = 2, pt.size = 2)
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Npy2r", cols = heatmap.colors, indices = c(4,8), sb.size = 8, ncol = 2, pt.size = 2)
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Mag", cols = heatmap.colors, indices = c(4,8), sb.size = 8, ncol = 2, pt.size = 2)
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Gjb1", cols = heatmap.colors, indices = c(4,8), sb.size = 8, ncol = 2, pt.size = 2)
+
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Syt1", cols = heatmap.colors, indices = c(4,8), sb.size = 8, ncol = 2, pt.size = 2)
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Snap25", cols = heatmap.colors, indices = c(4,8), sb.size = 8, ncol = 2, pt.size = 2)
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Nrgn", cols = heatmap.colors, indices = c(4,8), sb.size = 8, ncol = 2, pt.size = 2)
+c(4,8), sb.size = 8, ncol = 2, pt.size = 2)
+ST.FeaturePlot(se_batchcorrect_0.6, features = "Fos", cols = heatmap.colors, indices = c(4,8), sb.size = 8, ncol = 2, pt.size = 2)
+```
+
+
+Add treatment identities into the Seurat object
+```{r}
+se_batchcorrect_0.6$treatment <- paste0("treatment_", GetStaffli(se_batchcorrect_0.6)[[,"sample", drop = T]])
+for(i in 1:length(treatment)){
+  temp = which(GetStaffli(se_batchcorrect_0.6)[[,"sample"]] ==i)
+  se_batchcorrect_0.6$treatment[temp] = treatment[i]
+}
+```
+
+## Incorporate the Palo Colour palette
+```{r}
+# get the UMAP coordinates
+u <- se_batchcorrect_0.6@reductions[["umap"]]@cell.embeddings
+# get the cluster information
+cl <- Idents(se_batchcorrect_0.6)
+
+gg_color_hue <- function(n) {
+  hues = seq(30, 500, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+pal <- gg_color_hue(length(unique(cl)))
+
+palopal <- Palo(u,cl,pal)
+palopal
+
+# Plot the spatial seurat clusters using the Palo palette
+ST.FeaturePlot(object = se_batchcorrect_0.6, features = "seurat_clusters", cols = col_vector, pt.size = 2, ncol = 4)
+```
+
+## Run UMAP
+```{r}
+se_batchcorrect_0.6 <- RunUMAP(se_batchcorrect_0.6, reduction="pca", dims = 1:30)
+umap_plot <- DimPlot(se_batchcorrect_0.6, split.by = "treatment", group.by = "seurat_clusters", reduction = "umap", label = TRUE, label.size = 4, cols = col_vector) + labs(title = "UMAP of seurat clusters (0.6 cluster resolution)")
+umap_plot
+```
+
+# Cluster identities
+Use Allen Brain Atlas to add cluster identities.
+```{r}
+se_batchcorrect_0.6$seurat_clusters
+rename_idents <- c("CP", "L5", "STRv", "L2/3", "L6", "PAL", "PIR", "L1", "CC", "LSX", "HY", "L4", "Unk1", "Unk2", "Unk3", "Unk4")
+names(rename_idents) <- levels(se_batchcorrect_0.6)
+se_batchcorrect_0.6 <- RenameIdents(se_batchcorrect_0.6, rename_idents)
+umap_plot <- DimPlot(se_batchcorrect_0.6, reduction = "umap", split.by="treatment", label = TRUE, label.size = 4.5, repel = TRUE, label.box = TRUE, cols = col_vector) + labs(title = "UMAP of seurat clusters (0.6 cluster resolution)")
+umap_plot
+
+DimPlot(se_batchcorrect_0.6, reduction = "umap", split.by="treatment", label = FALSE, cols = col_vector, pt.size = 1) + labs(title = "UMAP of seurat clusters (0.6 cluster resolution)")
+
+se_0.6_Clusters <- ST.FeaturePlot(object = se_batchcorrect_0.6, features = "seurat_clusters", pt.size = 3, ncol = 2, indices = 7, cols = col_vector)
+ST.FeaturePlot(object = se_batchcorrect_0.6, features = "Fos", cols = col_vector, pt.size = 2, ncol = 4, )
+```
+
+# H&E image cluster overlay (for resolution 0.6)
+First have a look a the H&E sections for each sample
+```{r}
+ImagePlot(se_batchcorrect_0.6, method = "raster", type = "raw")
+```
+## Remove background of H&E images
+One thing that is useful for visualization is to mask the background of the H&E images.
+```{r}
+se_batchcorrect_0.6 <- MaskImages(object = se_batchcorrect_0.6)
+ImagePlot(se_batchcorrect_0.6, method = "raster", type = "masked")
+```
+
+```{r}
+ST.FeaturePlot(object = se_batchcorrect_0.6, features = "seurat_clusters", cols = col_vector, pt.size = 1, ncol = 2)
+FeatureOverlay(se.mirrorx, features = "seurat_clusters", type = "masked", cols = col_vector, sampleids = 8, pt.size = 2)
+```
+
+Flip images
+```{r}
+transforms <- list("4" = list("mirror.x" = T), "8" = list("mirror.x" = T))
+se.mirrorx <- WarpImages(se_batchcorrect_0.6, transforms)
+ImagePlot(se.mirrorx, method = "raster")
+```
+
+
+# Manual Annotation
+```{r}
+se_batchcorrect_0.6 <- LoadImages(se_batchcorrect_0.6)
+se_batchcorrect_0.6 <- ManualAnnotation(se_batchcorrect_0.6)
+```
+
