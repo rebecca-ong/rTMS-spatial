@@ -1,8 +1,5 @@
 ---
 title: "3-CortexAnalysis"
-author: "Rebecca Ong"
-date: "05/09/2024"
-output: html_document
 ---
 
 ```{r setup, include=FALSE}
