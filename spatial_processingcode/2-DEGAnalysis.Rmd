@@ -1,5 +1,6 @@
 ---
 title: "2-DEGAnalysis"
+Script used to perform differential gene expression analysis between iTBS, cTBS and sham (control) treated brain sections. 
 ---
 
 ```{r setup, include=FALSE}
