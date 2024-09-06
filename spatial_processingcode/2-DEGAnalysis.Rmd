@@ -1,10 +1,5 @@
 ---
 title: "2-DEGAnalysis"
-author: "Rebecca Ong"
-date: "05/09/2024"
-output: html_document
-editor_options: 
-  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
