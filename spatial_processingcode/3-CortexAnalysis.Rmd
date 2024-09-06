@@ -1,5 +1,6 @@
 ---
 title: "3-CortexAnalysis"
+Script used to subset Visium spots corresponding to the motor and sensory cortex and perform re-clustering analysis to obtain cortical layers specific to each cortical region.
 ---
 
 ```{r setup, include=FALSE}
