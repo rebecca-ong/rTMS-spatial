@@ -1,0 +1,472 @@
+---
+title: "2-DEGAnalysis"
+author: "Rebecca Ong"
+date: "05/09/2024"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Seurat)
+library(STutility)
+library(hdf5r)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(RColorBrewer)
+library(AnnotationDbi)
+library(org.Mm.eg.db)
+library(generics)
+library(clusterProfiler)
+```
+
+# Load seurat object
+Load in .rds seurat object that has been batch corrected and contains all the clusters that will be used for identifying DEGs
+```{r}
+NocTBS4_subset_BatchCorrected <- readRDS(file.path("file_path", "NocTBS4_subset_BatchCorrected.rds"))
+```
+
+## Set Idents to compare between treatments
+```{r}
+Idents(NocTBS4_subset_BatchCorrected) <- NocTBS4_subset_BatchCorrected$treatment
+```
+
+# DEG analysis
+## Cluster 1 -> CP (Caudoputamen)  (res 0.5)
+```{r}
+DEG_CP_iTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "1") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+DEG_CP_cTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "1") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+# annotate
+DEG_CP_iTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_CP_iTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_CP_iTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_CP_iTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_CP_iTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_CP_iTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_CP_cTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_CP_cTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_CP_cTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_CP_cTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_CP_cTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_CP_cTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_CP_iTBS <- DEG_CP_iTBS %>% drop_na()
+DEG_CP_cTBS <- DEG_CP_cTBS %>% drop_na()
+
+# get number of overlapping DEGs between iTBS and cTBS
+sum(table(generics::intersect(rownames(DEG_CP_iTBS), rownames(DEG_CP_cTBS)))) #9
+sum(table(rownames(DEG_CP_iTBS))) - sum(table(generics::intersect(rownames(DEG_CP_iTBS), rownames(DEG_CP_cTBS)))) #8
+sum(table(rownames(DEG_CP_cTBS))) - sum(table(generics::intersect(rownames(DEG_CP_iTBS), rownames(DEG_CP_cTBS)))) #369
+```
+
+## Cluster 2 -> L5  (res 0.5)
+```{r}
+DEG_L5_iTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "2") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+DEG_L5_cTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "2") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+# annotate
+DEG_L5_iTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L5_iTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_L5_iTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L5_iTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_L5_iTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L5_iTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_L5_cTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L5_cTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_L5_cTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L5_cTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_L5_cTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L5_cTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_L5_iTBS <- DEG_L5_iTBS %>% drop_na()
+DEG_L5_cTBS <- DEG_L5_cTBS %>% drop_na()
+
+# get number of overlapping DEGs between iTBS and cTBS
+sum(table(generics::intersect(rownames(DEG_L5_iTBS), rownames(DEG_L5_cTBS)))) #6
+sum(table(rownames(DEG_L5_iTBS))) - sum(table(generics::intersect(rownames(DEG_L5_iTBS), rownames(DEG_L5_cTBS)))) #9
+sum(table(rownames(DEG_L5_cTBS))) - sum(table(generics::intersect(rownames(DEG_L5_iTBS), rownames(DEG_L5_cTBS)))) #352
+```
+
+## Cluster 3 -> L2/3 (res 0.5)
+```{r}
+DEG_L2.3_iTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "3") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+DEG_L2.3_cTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "3") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+# annotate
+DEG_L2.3_iTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L2.3_iTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_L2.3_iTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L2.3_iTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_L2.3_iTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L2.3_iTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_L2.3_cTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L2.3_cTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_L2.3_cTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L2.3_cTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_L2.3_cTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L2.3_cTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_L2.3_iTBS <- DEG_L2.3_iTBS %>% drop_na()
+DEG_L2.3_cTBS <- DEG_L2.3_cTBS %>% drop_na()
+
+# get number of overlapping DEGs between iTBS and cTBS
+sum(table(generics::intersect(rownames(DEG_L2.3_iTBS), rownames(DEG_L2.3_cTBS)))) #4
+sum(table(rownames(DEG_L2.3_iTBS))) - sum(table(generics::intersect(rownames(DEG_L2.3_iTBS), rownames(DEG_L2.3_cTBS)))) #7
+sum(table(rownames(DEG_L2.3_cTBS))) - sum(table(generics::intersect(rownames(DEG_L2.3_iTBS), rownames(DEG_L2.3_cTBS)))) #331
+```
+
+## Cluster 4 -> Ctx (other regions)
+```{r}
+DEG_Ctx.o_iTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "4") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+DEG_Ctx.o_cTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "4") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+# annotate
+DEG_Ctx.o_iTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_Ctx.o_iTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_Ctx.o_iTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_Ctx.o_iTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_Ctx.o_iTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_Ctx.o_iTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_Ctx.o_cTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_Ctx.o_cTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_Ctx.o_cTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_Ctx.o_cTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_Ctx.o_cTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_Ctx.o_cTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_Ctx.o_iTBS <- DEG_Ctx.o_iTBS %>% drop_na()
+DEG_Ctx.o_cTBS <- DEG_Ctx.o_cTBS %>% drop_na()
+
+# get number of overlapping DEGs between iTBS and cTBS
+sum(table(generics::intersect(rownames(DEG_Ctx.o_iTBS), rownames(DEG_Ctx.o_cTBS)))) #17
+sum(table(rownames(DEG_Ctx.o_iTBS))) - sum(table(generics::intersect(rownames(DEG_Ctx.o_iTBS), rownames(DEG_Ctx.o_cTBS)))) #13
+sum(table(rownames(DEG_Ctx.o_cTBS))) - sum(table(generics::intersect(rownames(DEG_Ctx.o_iTBS), rownames(DEG_Ctx.o_cTBS)))) #294
+```
+
+## Cluster 5 -> striatum ventral region (STRv)
+```{r}
+DEG_STRv_iTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "5") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+DEG_STRv_cTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "5") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+# annotate
+DEG_STRv_iTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_STRv_iTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_STRv_iTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_STRv_iTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_STRv_iTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_STRv_iTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_STRv_cTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_STRv_cTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_STRv_cTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_STRv_cTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_STRv_cTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_STRv_cTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_STRv_iTBS <- DEG_STRv_iTBS %>% drop_na()
+DEG_STRv_cTBS <- DEG_STRv_cTBS %>% drop_na()
+
+# get number of overlapping DEGs between iTBS and cTBS
+sum(table(generics::intersect(rownames(DEG_STRv_iTBS), rownames(DEG_STRv_cTBS)))) #8
+sum(table(rownames(DEG_STRv_iTBS))) - sum(table(generics::intersect(rownames(DEG_STRv_iTBS), rownames(DEG_STRv_cTBS)))) #7
+sum(table(rownames(DEG_STRv_cTBS))) - sum(table(generics::intersect(rownames(DEG_STRv_iTBS), rownames(DEG_STRv_cTBS)))) #215
+```
+
+## Cluster 6 -> Ctx (layer 6)
+```{r}
+DEG_L6_iTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "6") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+DEG_L6_cTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "6") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+# annotate
+DEG_L6_iTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L6_iTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_L6_iTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L6_iTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_L6_iTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L6_iTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_L6_cTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L6_cTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_L6_cTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L6_cTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_L6_cTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L6_cTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_L6_iTBS <- DEG_L6_iTBS %>% drop_na()
+DEG_L6_cTBS <- DEG_L6_cTBS %>% drop_na()
+
+# get number of overlapping DEGs between iTBS and cTBS
+sum(table(generics::intersect(rownames(DEG_L6_iTBS), rownames(DEG_L6_cTBS)))) #16
+sum(table(rownames(DEG_L6_iTBS))) - sum(table(generics::intersect(rownames(DEG_L6_iTBS), rownames(DEG_L6_cTBS)))) #15
+sum(table(rownames(DEG_L6_cTBS))) - sum(table(generics::intersect(rownames(DEG_L6_iTBS), rownames(DEG_L6_cTBS)))) #368
+```
+
+## Cluster 7 -> Pallidum (PAL)
+```{r}
+DEG_PAL_iTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "7") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+DEG_PAL_cTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "7") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+# annotate
+DEG_PAL_iTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_PAL_iTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_PAL_iTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_PAL_iTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_PAL_iTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_PAL_iTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_PAL_cTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_PAL_cTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_PAL_cTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_PAL_cTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_PAL_cTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_PAL_cTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_PAL_iTBS <- DEG_PAL_iTBS %>% drop_na()
+DEG_PAL_cTBS <- DEG_PAL_cTBS %>% drop_na()
+
+# get number of overlapping DEGs between iTBS and cTBS
+sum(table(generics::intersect(rownames(DEG_PAL_iTBS), rownames(DEG_PAL_cTBS)))) #32
+sum(table(rownames(DEG_PAL_iTBS))) - sum(table(generics::intersect(rownames(DEG_PAL_iTBS), rownames(DEG_PAL_cTBS)))) #20
+sum(table(rownames(DEG_PAL_cTBS))) - sum(table(generics::intersect(rownames(DEG_PAL_iTBS), rownames(DEG_PAL_cTBS)))) #375
+```
+
+## Cluster 8 -> Ctx layer 1 (L1)
+```{r}
+DEG_L1_iTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "8") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+DEG_L1_cTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "8") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+# annotate
+DEG_L1_iTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L1_iTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_L1_iTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L1_iTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_L1_iTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L1_iTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_L1_cTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L1_cTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_L1_cTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L1_cTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_L1_cTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_L1_cTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_L1_iTBS <- DEG_L1_iTBS %>% drop_na()
+DEG_L1_cTBS <- DEG_L1_cTBS %>% drop_na()
+
+# get number of overlapping DEGs between iTBS and cTBS
+sum(table(generics::intersect(rownames(DEG_L1_iTBS), rownames(DEG_L1_cTBS)))) #16
+sum(table(rownames(DEG_L1_iTBS))) - sum(table(generics::intersect(rownames(DEG_L1_iTBS), rownames(DEG_L1_cTBS)))) #13
+sum(table(rownames(DEG_L1_cTBS))) - sum(table(generics::intersect(rownames(DEG_L1_iTBS), rownames(DEG_L1_cTBS)))) #368
+```
+
+## Cluster 9 -> corpus callosum (CC)
+```{r}
+DEG_CC_iTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "9") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+DEG_CC_cTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "9") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+# annotate
+DEG_CC_iTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_CC_iTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_CC_iTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_CC_iTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_CC_iTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_CC_iTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_CC_cTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_CC_cTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_CC_cTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_CC_cTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_CC_cTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_CC_cTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_CC_iTBS <- DEG_CC_iTBS %>% drop_na()
+DEG_CC_cTBS <- DEG_CC_cTBS %>% drop_na()
+
+# get number of overlapping DEGs between iTBS and cTBS
+sum(table(generics::intersect(rownames(DEG_CC_iTBS), rownames(DEG_CC_cTBS)))) #25
+sum(table(rownames(DEG_CC_iTBS))) - sum(table(generics::intersect(rownames(DEG_CC_iTBS), rownames(DEG_CC_cTBS)))) #25
+sum(table(rownames(DEG_CC_cTBS))) - sum(table(generics::intersect(rownames(DEG_CC_iTBS), rownames(DEG_CC_cTBS)))) #348
+```
+
+## Cluster 10 -> hypothalamus (HY)
+```{r}
+DEG_HY_iTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "10") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+DEG_HY_cTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "10") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+# annotate
+DEG_HY_iTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_HY_iTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_HY_iTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_HY_iTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_HY_iTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_HY_iTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_HY_cTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_HY_cTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_HY_cTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_HY_cTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_HY_cTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_HY_cTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_HY_iTBS <- DEG_HY_iTBS %>% drop_na()
+DEG_HY_cTBS <- DEG_HY_cTBS %>% drop_na()
+
+# get number of overlapping DEGs between iTBS and cTBS
+sum(table(generics::intersect(rownames(DEG_HY_iTBS), rownames(DEG_HY_cTBS)))) #38
+sum(table(rownames(DEG_HY_iTBS))) - sum(table(generics::intersect(rownames(DEG_HY_iTBS), rownames(DEG_HY_cTBS)))) #13
+sum(table(rownames(DEG_HY_cTBS))) - sum(table(generics::intersect(rownames(DEG_HY_iTBS), rownames(DEG_HY_cTBS)))) #439
+```
+
+## Cluster 11 -> lateral septal complex (LSX)
+```{r}
+DEG_LSX_iTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "11") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+DEG_LSX_cTBS <- SubsetSTData(NocTBS4_subset_BatchCorrected, expression = SCT_snn_res.0.5 == "11") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+# annotate
+DEG_LSX_iTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_LSX_iTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_LSX_iTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_LSX_iTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_LSX_iTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_LSX_iTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_LSX_cTBS$symbol <- mapIds(org.Mm.eg.db, keys=row.names(DEG_LSX_cTBS), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+DEG_LSX_cTBS$genename <- mapIds(org.Mm.eg.db, keys=row.names(DEG_LSX_cTBS), column="GENENAME", keytype="SYMBOL", multiVals="first")
+DEG_LSX_cTBS$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(DEG_LSX_cTBS), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+
+DEG_LSX_iTBS <- DEG_LSX_iTBS %>% drop_na()
+DEG_LSX_cTBS <- DEG_LSX_cTBS %>% drop_na()
+
+# get number of overlapping DEGs between iTBS and cTBS
+sum(table(generics::intersect(rownames(DEG_LSX_iTBS), rownames(DEG_LSX_cTBS)))) #17
+sum(table(rownames(DEG_LSX_iTBS))) - sum(table(generics::intersect(rownames(DEG_LSX_iTBS), rownames(DEG_LSX_cTBS)))) #16
+sum(table(rownames(DEG_LSX_cTBS))) - sum(table(generics::intersect(rownames(DEG_LSX_iTBS), rownames(DEG_LSX_cTBS)))) #420
+```
+
+# Significant DEGs (p.adj<0.05, abs(avg_log2FC) > 0.25)
+```{r}
+# subcortical
+DEG_CP_iTBS_Sig <- subset(DEG_CP_iTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+DEG_CP_cTBS_Sig <- subset(DEG_CP_cTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+
+DEG_CC_iTBS_Sig <- subset(DEG_CC_iTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+DEG_CC_cTBS_Sig <- subset(DEG_CC_cTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+
+DEG_HY_iTBS_Sig <- subset(DEG_HY_iTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+DEG_HY_cTBS_Sig <- subset(DEG_HY_cTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+
+DEG_LSX_iTBS_Sig <- subset(DEG_LSX_iTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+DEG_LSX_cTBS_Sig <- subset(DEG_LSX_cTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+
+DEG_PAL_iTBS_Sig <- subset(DEG_PAL_iTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+DEG_PAL_cTBS_Sig <- subset(DEG_PAL_cTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+
+DEG_STRv_iTBS_Sig <- subset(DEG_STRv_iTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+DEG_STRv_cTBS_Sig <- subset(DEG_STRV_cTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+
+# cortical
+DEG_L1_iTBS_Sig <- subset(DEG_L1_iTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+DEG_L1_cTBS_Sig <- subset(DEG_L1_cTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+
+DEG_L2.3_iTBS_Sig <- subset(DEG_L2.3_iTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+DEG_L2.3_cTBS_Sig <- subset(DEG_L2.3_cTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+
+DEG_L5_iTBS_Sig <- subset(DEG_L5_iTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+DEG_L5_cTBS_Sig <- subset(DEG_L5_cTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+
+DEG_L6_iTBS_Sig <- subset(DEG_L6_iTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+DEG_L6_cTBS_Sig <- subset(DEG_L6_cTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+
+DEG_Ctx.o_iTBS_Sig <- subset(DEG_Ctx.o_iTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+DEG_Ctx.o_cTBS_Sig <- subset(DEG_Ctx.o_cTBS, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+```
+
+# GO analysis
+```{r}
+## Cluster 1 -> caudoputamen
+DEG_CP_iTBS_Sig <- DEG_CP_iTBS_Sig[order(DEG_CP_iTBS_Sig$p_val_adj),]
+iTBS.CP_genelist <- DEG_CP_iTBS_Sig[,8]
+sum(table(iTBS.CP_genelist)) #17
+iTBS.CP_GO <- enrichGO(iTBS.CP_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+DEG_CP_cTBS_Sig <- DEG_CP_cTBS_Sig[order(DEG_CP_cTBS_Sig$p_val_adj),]
+cTBS.CP_genelist <- DEG_CP_cTBS_Sig[,8]
+sum(table(cTBS.CP_genelist)) #378
+cTBS.CP_GO <- enrichGO(cTBS.CP_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## Cluster 2 -> layer 5
+DEG_L5_iTBS_Sig <- DEG_L5_iTBS_Sig[order(DEG_L5_iTBS_Sig$p_val_adj),]
+iTBS.L5_genelist <- DEG_L5_iTBS_Sig[,8]
+sum(table(iTBS.L5_genelist)) #15
+iTBS.L5_GO <- enrichGO(iTBS.L5_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+DEG_L5_cTBS_Sig <- DEG_L5_cTBS_Sig[order(DEG_L5_cTBS_Sig$p_val_adj),]
+cTBS.L5_genelist <- DEG_L5_cTBS_Sig[,8]
+sum(table(cTBS.L5_genelist)) ##358
+cTBS.L5_GO <- enrichGO(cTBS.L5_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## Cluster 3 -> layer 2/3
+DEG_L2.3_iTBS_Sig <- DEG_L2.3_iTBS_Sig[order(DEG_L2.3_iTBS_Sig$p_val_adj),]
+iTBS.L2.3_genelist <- DEG_L2.3_iTBS_Sig[,8]
+sum(table(iTBS.L2.3_genelist)) #11
+iTBS.L2.3_GO <- enrichGO(iTBS.L2.3_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+DEG_L2.3_cTBS_Sig <- DEG_L2.3_cTBS_Sig[order(DEG_L2.3_cTBS_Sig$p_val_adj),]
+cTBS.L2.3_genelist <- DEG_L2.3_cTBS_Sig[,8]
+sum(table(cTBS.L2.3_genelist)) #333
+cTBS.L2.3_GO <- enrichGO(cTBS.L2.3_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## Cluster 4 -> Ctx (other regions)
+DEG_Ctx.o_iTBS_Sig <- DEG_Ctx.o_iTBS_Sig[order(DEG_Ctx.o_iTBS_Sig$p_val_adj),]
+iTBS.Ctx.o_genelist <- DEG_Ctx.o_iTBS_Sig[,8]
+sum(table(iTBS.Ctx.o_genelist)) #29
+iTBS.Ctx.o_GO <- enrichGO(iTBS.Ctx.o_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+DEG_Ctx.o_cTBS_Sig <- DEG_Ctx.o_cTBS_Sig[order(DEG_Ctx.o_cTBS_Sig$p_val_adj),]
+cTBS.Ctx.o_genelist <- DEG_Ctx.o_cTBS_Sig[,8]
+sum(table(cTBS.Ctx.o_genelist)) #306
+cTBS.Ctx.o_GO <- enrichGO(cTBS.Ctx.o_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## Cluster 5 -> striatum ventral region (STRv)
+DEG_STRv_iTBS_Sig <- DEG_STRv_iTBS_Sig[order(DEG_STRv_iTBS_Sig$p_val_adj),]
+iTBS.STRv_genelist <- DEG_STRv_iTBS_Sig[,8]
+sum(table(iTBS.STRv_genelist)) #12
+iTBS.STRv_GO <- enrichGO(iTBS.STRv_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+DEG_STRv_cTBS_Sig <- DEG_STRv_cTBS_Sig[order(DEG_STRv_cTBS_Sig$p_val_adj),]
+cTBS.STRv_genelist <- DEG_STRv_cTBS_Sig[,8]
+sum(table(cTBS.STRv_genelist)) #220
+cTBS.STRv_GO <- enrichGO(cTBS.STRv_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## Cluster 6 -> layer 6
+DEG_L6_iTBS_Sig <- DEG_L6_iTBS_Sig[order(DEG_L6_iTBS_Sig$p_val_adj),]
+iTBS.L6_genelist <- DEG_L6_iTBS_Sig[,8]
+sum(table(iTBS.L6_genelist)) #29
+iTBS.L6_GO <- enrichGO(iTBS.L6_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+DEG_L6_cTBS_Sig <- DEG_L6_cTBS_Sig[order(DEG_L6_cTBS_Sig$p_val_adj),]
+cTBS.L6_genelist <- DEG_L6_cTBS_Sig[,8]
+sum(table(cTBS.L6_genelist)) #370
+cTBS.L6_GO <- enrichGO(cTBS.L6_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## Cluster 7 -> Pallidum (PAL)
+DEG_PAL_iTBS_Sig <- DEG_PAL_iTBS_Sig[order(DEG_PAL_iTBS_Sig$p_val_adj),]
+iTBS.PAL_genelist <- DEG_PAL_iTBS_Sig[,8]
+sum(table(iTBS.PAL_genelist)) #50
+iTBS.PAL_GO <- enrichGO(iTBS.PAL_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+DEG_PAL_cTBS_Sig <- DEG_PAL_cTBS_Sig[order(DEG_PAL_cTBS_Sig$p_val_adj),]
+cTBS.PAL_genelist <- DEG_PAL_cTBS_Sig[,8]
+sum(table(cTBS.PAL_genelist)) #400
+cTBS.PAL_GO <- enrichGO(cTBS.PAL_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## Cluster 8 -> layer 1
+DEG_L1_iTBS_Sig <- DEG_L1_iTBS_Sig[order(DEG_L1_iTBS_Sig$p_val_adj),]
+iTBS.L1_genelist <- DEG_L1_iTBS_Sig[,8]
+sum(table(iTBS.L1_genelist)) #23
+iTBS.L1_GO <- enrichGO(iTBS.L1_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+DEG_L1_cTBS_Sig <- DEG_L1_cTBS_Sig[order(DEG_L1_cTBS_Sig$p_val_adj),]
+cTBS.L1_genelist <- DEG_L1_cTBS_Sig[,8]
+sum(table(cTBS.L1_genelist)) #345
+cTBS.L1_GO <- enrichGO(cTBS.L1_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## Cluster 9 -> corpus callosum (CC)
+DEG_CC_iTBS_Sig <- DEG_CC_iTBS_Sig[order(DEG_CC_iTBS_Sig$p_val_adj),]
+iTBS.CC_genelist <- DEG_CC_iTBS_Sig[,8]
+sum(table(iTBS.CC_genelist)) #45
+iTBS.CC_GO <- enrichGO(iTBS.CC_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+DEG_CC_cTBS_Sig <- DEG_CC_cTBS_Sig[order(DEG_CC_cTBS_Sig$p_val_adj),]
+cTBS.CC_genelist <- DEG_CC_cTBS_Sig[,8]
+sum(table(cTBS.CC_genelist)) #272
+iTBS.CC_GO <- enrichGO(iTBS.CC_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## Cluster 10 <- hypothalamus (HY)
+DEG_HY_iTBS_Sig <- DEG_HY_iTBS_Sig[order(DEG_HY_iTBS_Sig$p_val_adj),]
+iTBS.HY_genelist <- DEG_HY_iTBS_Sig[,8]
+sum(table(iTBS.HY_genelist)) #41
+iTBS.HY_GO <- enrichGO(iTBS.HY_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+DEG_HY_cTBS_Sig <- DEG_HY_cTBS_Sig[order(DEG_HY_cTBS_Sig$p_val_adj),]
+cTBS.HY_genelist <- DEG_HY_cTBS_Sig[,8]
+sum(table(cTBS.HY_genelist)) #412
+cTBS.HY_GO <- enrichGO(cTBS.HY_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## Cluster 11 -> lateral septal complex (LSX)
+DEG_LSX_iTBS_Sig <- DEG_LSX_iTBS_Sig[order(DEG_LSX_iTBS_Sig$p_val_adj),]
+iTBS.LSX_genelist <- DEG_LSX_iTBS_Sig[,8]
+sum(table(iTBS.LSX_genelist)) #26
+iTBS.LSX_GO <- enrichGO(iTBS.LSX_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+DEG_LSX_cTBS_Sig <- DEG_LSX_cTBS_Sig[order(DEG_LSX_cTBS_Sig$p_val_adj),]
+cTBS.LSX_genelist <- DEG_LSX_cTBS_Sig[,8]
+sum(table(cTBS.LSX_genelist)) #398
+cTBS.LSX_GO <- enrichGO(cTBS.LSX_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+```

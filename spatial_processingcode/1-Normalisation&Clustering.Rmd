@@ -1,0 +1,278 @@
+---
+title: "1-Normalisation&Clustering"
+author: "Rebecca Ong"
+date: "05/09/2024"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Seurat)
+library(STutility)
+library(hdf5r)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(RColorBrewer)
+library(SC3)
+library(pander)
+library(Palo)
+```
+
+# Set directory containing files
+```{r}
+setwd("~/file_path")
+```
+
+# Load data (spaceranger outputs)
+Create a data.frame that contains all the paths to the required input files for all 12 samples (4 sham, 4 iTBS, 4 cTBS)
+```{r}
+sampleNames <- c('sham1', 'sham2', 'sham3', 'sham4', 'iTBS1', 'iTBS2', 'iTBS3', 'iTBS4', 'cTBS1', 'cTBS2', 'cTBS3', 'cTBS4')
+infoTable <- data.frame(sampleNames)
+rownames(infoTable) <- sampleNames
+infoTable$samples <- c('sham1_filtered_feature_bc_matrix.h5', 'sham2_filtered_feature_bc_matrix.h5', 'sham3_filtered_feature_bc_matrix.h5', 'sham4_filtered_feature_bc_matrix.h5', 'iTBS1_filtered_feature_bc_matrix.h5', 'iTBS2_filtered_feature_bc_matrix.h5', 'iTBS3_filtered_feature_bc_matrix.h5', 'iTBS4_filtered_feature_bc_matrix.h5',
+'cTBS1_filtered_feature_bc_matrix.h5',
+'cTBS2_filtered_feature_bc_matrix.h5',
+'cTBS3_filtered_feature_bc_matrix.h5',
+'cTBS4_filtered_feature_bc_matrix.h5')
+infoTable$spotfiles <- c('sham1_tissue_positions_list.csv', 'sham2_tissue_positions_list.csv', 'sham3_tissue_positions_list.csv', 'sham4_tissue_positions_list.csv', 'iTBS1_tissue_positions_list.csv', 'iTBS2_tissue_positions_list.csv', 'iTBS3_tissue_positions_list.csv', 'iTBS4_tissue_positions_list.csv',
+'cTBS1_tissue_positions_list.csv',
+'cTBS2_tissue_positions_list.csv',
+'cTBS3_tissue_positions_list.csv',
+'cTBS4_tissue_positions_list.csv')
+infoTable$imgs <- c('sham1_tissue_hires_image.png', 'sham2_tissue_hires_image.png', 'sham3_tissue_hires_image.png', 'sham4_tissue_hires_image.png', 'iTBS1_tissue_hires_image.png', 'iTBS2_tissue_hires_image.png', 'iTBS3_tissue_hires_image.png', 'iTBS4_tissue_hires_image.png',
+'cTBS1_tissue_hires_image.png',
+'cTBS2_tissue_hires_image.png',
+'cTBS3_tissue_hires_image.png',
+'cTBS4_tissue_hires_image.png')
+infoTable$json <- c('sham1_scalefactors_json.json', 'sham2_scalefactors_json.json', 'sham3_scalefactors_json.json', 'sham4_scalefactors_json.json', 'iTBS1_scalefactors_json.json', 'iTBS2_scalefactors_json.json', 'iTBS3_scalefactors_json.json', 'iTBS4_scalefactors_json.json',
+'cTBS1_scalefactors_json.json',
+'cTBS2_scalefactors_json.json',
+'cTBS3_scalefactors_json.json',
+'cTBS4_scalefactors_json.json')
+```
+
+## Create Seurat object
+```{r}
+seurat <- InputFromTable(infotable = infoTable,
+                     minUMICountsPerGene = 100,
+                     minGenesPerSpot = 5,
+                     minSpotsPerGene = 500,
+                     platform = "Visium")
+```
+
+## Load H&E images
+```{r}
+seurat <- LoadImages(seurat, time.resolve = FALSE, verbose= TRUE)
+```
+
+
+## Add sample and treatment identities into the Seurat object
+```{r}
+seurat$sample <- paste0("sample_", GetStaffli(seurat)[[,"sample", drop = T]])
+for(i in 1:length(sampleNames)){
+  temp = which(GetStaffli(seurat)[[,'sample']] ==i)
+  seurat$sample[temp] = sampleNames[i]
+}
+
+treatment <- c('sham', 'sham', 'sham', 'sham', 'iTBS', 'iTBS', 'iTBS', 'iTBS', 'cTBS', 'cTBS', 'cTBS', 'cTBS')
+seurat$treatment <- paste0("treatment_", GetStaffli(seurat)[[,"sample", drop = T]])
+for(i in 1:length(treatment)){
+  temp = which(GetStaffli(seurat)[[,"sample"]] ==i)
+  seurat$treatment[temp] = treatment[i]
+}
+```
+
+# Quality control
+To look at the spatial distribution of number of genes detected per cell (nFeature_RNA)
+```{r}
+seurat@tools[["Staffli"]]@samplenames <- sampleNames
+ST.FeaturePlot(object = seurat, features = "nFeature_RNA", indices = '12', ncol = 2, pt.size = 2.5)
+FeatureOverlay(seurat, features ="nFeature_RNA")
+```
+
+To look at the spatial distribution of the number of UMIs detected per cell (nCount_RNA)
+```{r}
+ST.FeaturePlot(seurat, features = c("nCount_RNA"), indices = '12', ncol = 2, pt.size = 2.5)
+```
+
+## QC Plots
+```{r}
+# Number of unique genes per spot
+ggplot() + geom_histogram(data = seurat[[]], aes(nFeature_RNA), fill = "red", alpha = 0.7, bins = 50) + ggtitle("Unique genes per spot")
+
+# Total counts per spots (combine all samples)
+ggplot() + geom_histogram(data = seurat[[]], aes(nCount_RNA), fill = "red", alpha = 0.7, bins = 50) + ggtitle("Total counts per spot")
+
+gene_attr <- data.frame(nUMI = Matrix::rowSums(seurat@assays$RNA@counts),
+                        nSpots = Matrix::rowSums(seurat@assays$RNA@counts > 0))
+
+# Total counts per gene (log10 scale)
+ggplot() + geom_histogram(data = gene_attr, aes(nUMI), fill = "red", alpha = 0.7, bins = 50) + scale_x_log10() + 
+  ggtitle("Total counts per gene (log10scale)")
+
+# Total spots per gene
+ggplot () + geom_histogram(data = gene_attr, aes(nSpots), fill = "red", alpha = 0.7, bins = 50) + ggtitle("Total spots per gene")
+```
+
+# Run analysis w/out sample 12 (cTBS4)
+Plotting the UMI distribution on sample 12 (cTBS4), a large area appears to have no genes or UMIs detected i.e., blank. This is likely due to incomplete/unsuccessful permeabilisation of the tissue and thus no RNA was released and captured (permeabilisation enzyme was unevenly distirbuted in the well).
+
+## Load data
+```{r}
+NocTBS4_sampleNames <- c('sham1', 'sham2', 'sham3', 'sham4', 'iTBS1', 'iTBS2', 'iTBS3', 'iTBS4', 'cTBS1', 'cTBS2', 'cTBS3')
+NocTBS4_infoTable <- data.frame(NocTBS4_sampleNames)
+rownames(NocTBS4_infoTable) <- NocTBS4_sampleNames
+NocTBS4_infoTable$samples <- c('sham1_filtered_feature_bc_matrix.h5', 'sham2_filtered_feature_bc_matrix.h5', 'sham3_filtered_feature_bc_matrix.h5', 'sham4_filtered_feature_bc_matrix.h5', 'iTBS1_filtered_feature_bc_matrix.h5', 'iTBS2_filtered_feature_bc_matrix.h5', 'iTBS3_filtered_feature_bc_matrix.h5', 'iTBS4_filtered_feature_bc_matrix.h5',
+'cTBS1_filtered_feature_bc_matrix.h5',
+'cTBS2_filtered_feature_bc_matrix.h5',
+'cTBS3_filtered_feature_bc_matrix.h5')
+NocTBS4_infoTable$spotfiles <- c('sham1_tissue_positions_list.csv', 'sham2_tissue_positions_list.csv', 'sham3_tissue_positions_list.csv', 'sham4_tissue_positions_list.csv', 'iTBS1_tissue_positions_list.csv', 'iTBS2_tissue_positions_list.csv', 'iTBS3_tissue_positions_list.csv', 'iTBS4_tissue_positions_list.csv',
+'cTBS1_tissue_positions_list.csv',
+'cTBS2_tissue_positions_list.csv',
+'cTBS3_tissue_positions_list.csv')
+NocTBS4_infoTable$imgs <- c('sham1_tissue_hires_image.png', 'sham2_tissue_hires_image.png', 'sham3_tissue_hires_image.png', 'sham4_tissue_hires_image.png', 'iTBS1_tissue_hires_image.png', 'iTBS2_tissue_hires_image.png', 'iTBS3_tissue_hires_image.png', 'iTBS4_tissue_hires_image.png',
+'cTBS1_tissue_hires_image.png',
+'cTBS2_tissue_hires_image.png',
+'cTBS3_tissue_hires_image.png')
+NocTBS4_infoTable$json <- c('sham1_scalefactors_json.json', 'sham2_scalefactors_json.json', 'sham3_scalefactors_json.json', 'sham4_scalefactors_json.json', 'iTBS1_scalefactors_json.json', 'iTBS2_scalefactors_json.json', 'iTBS3_scalefactors_json.json', 'iTBS4_scalefactors_json.json',
+'cTBS1_scalefactors_json.json',
+'cTBS2_scalefactors_json.json',
+'cTBS3_scalefactors_json.json')
+```
+
+## Create Seurat object
+Create a Seurat object using the infoTable (with No cTBS4)
+```{r}
+NocTBS4_seurat <- InputFromTable(infotable = NocTBS4_infoTable,
+                     minUMICountsPerGene = 100,
+                     minGenesPerSpot = 5,
+                     minSpotsPerGene = 500,
+                     platform = "Visium")
+
+# Load H&E images (no cTBS4)
+NocTBS4_seurat <- LoadImages(NocTBS4_seurat, time.resolve = FALSE, verbose= TRUE)
+ImagePlot(NocTBS4_seurat, method = "raster", type = "raw")
+
+# Add sample identities into the Seurat object
+NocTBS4_seurat$sample <- paste0("sample_", GetStaffli(NocTBS4_seurat)[[,"sample", drop = T]])
+for(i in 1:length(NocTBS4_sampleNames)){
+  temp = which(GetStaffli(NocTBS4_seurat)[[,'sample']] ==i)
+  NocTBS4_seurat$sample[temp] = NocTBS4_sampleNames[i]
+}
+
+# Add treatment identities into the Seurat object
+treatment <- c('sham', 'sham', 'sham', 'sham', 'iTBS', 'iTBS', 'iTBS', 'iTBS', 'cTBS', 'cTBS', 'cTBS')
+NocTBS4_seurat$treatment <- paste0("treatment_", GetStaffli(NocTBS4_seurat)[[,"sample", drop = T]])
+for(i in 1:length(treatment)){
+  temp = which(GetStaffli(NocTBS4_seurat)[[,"sample"]] ==i)
+  NocTBS4_seurat$treatment[temp] = treatment[i]
+}
+```
+
+## Quality control
+```{r}
+# Number of unique genes per spot
+ggplot() + geom_histogram(data = NocTBS4_seurat[[]], aes(nFeature_RNA), fill = "red", alpha = 0.7, bins = 50) + ggtitle("Unique genes per spot")
+
+# Total counts per spots (combine all samples)
+ggplot() + geom_histogram(data = NocTBS4_seurat[[]], aes(nCount_RNA), fill = "red", alpha = 0.7, bins = 50) + ggtitle("Total counts per spot")
+
+NocTBS4_gene_attr <- data.frame(nUMI = Matrix::rowSums(NocTBS4_seurat@assays$RNA@counts),
+                        nSpots = Matrix::rowSums(NocTBS4_seurat@assays$RNA@counts > 0))
+
+# Total counts per gene (log10 scale)
+ggplot() + geom_histogram(data = NocTBS4_gene_attr, aes(nUMI), fill = "red", alpha = 0.7, bins = 50) + scale_x_log10() + 
+  ggtitle("Total counts per gene (log10scale)")
+
+# Total spots per gene
+ggplot () + geom_histogram(data = NocTBS4_gene_attr, aes(nSpots), fill = "red", alpha = 0.7, bins = 50) + ggtitle("Total spots per gene")
+```
+
+### Mitochondrial content
+```{r}
+mt.genes <- grep(pattern = "^mt-", x = rownames(NocTBS4_seurat), value = TRUE)
+NocTBS4_seurat$percent.mito <- (Matrix::colSums(NocTBS4_seurat@assays$RNA@counts[mt.genes,])/Matrix::colSums(NocTBS4_seurat@assays$RNA@counts))*100
+ST.FeaturePlot(NocTBS4_seurat, features = "percent.mito", pt.size = 1.5, ncol = 3)
+```
+
+### Ribosomal protein content
+Identify the proportion of ribosomal protein coding genes per spot
+```{r}
+ribo.genes <- grep(pattern = "^Rp1|^Rps", x = rownames(NocTBS4_seurat), value = TRUE)
+NocTBS4_seurat$percent.ribo <- (Matrix::colSums(NocTBS4_seurat@assays$RNA@counts[ribo.genes,])/Matrix::colSums(NocTBS4_seurat@assays$RNA@counts))*100
+ST.FeaturePlot(NocTBS4_seurat, features = "percent.ribo", pt.size = 2.8, indices = 11)
+```
+
+## Filtering
+```{r}
+se.subset <- SubsetSTData(NocTBS4_seurat, expression = percent.mito < 30)
+cat("Spots removed: ", ncol(NocTBS4_seurat) - ncol(se.subset), "\n")
+ST.FeaturePlot(se.subset, features = "percent.mito", pt.size = 1.5, ncol = 3) + ggtitle("Keep spots with <30% mitochondrial content")
+NocTBS4_subset <- se.subset
+```
+
+## Batch correction
+```{r}
+NocTBS4_subset_NoBatchCorrection <- NocTBS4_subset %>%
+  SCTransform() %>%
+  RunPCA() %>%
+  RunUMAP(reduction = "pca", dims = 1:30)
+
+NocTBS4_subset_BatchCorrected <- SCTransform(NocTBS4_subset, vars.to.regress = "sample")
+NocTBS4_subset_BatchCorrected <- NocTBS4_subset_BatchCorrected %>%
+  RunPCA() %>%
+  RunUMAP(reduction = "pca", dims = 1:30)
+
+p1 <- DimPlot(NocTBS4_subset_NoBatchCorrection, group.by = "sample", reduction = "umap") + ggtitle("No batch correction")
+p2 <- DimPlot(NocTBS4_subset_BatchCorrected, group.by = "sample", reduction = "umap") + ggtitle("Batch corrected")
+p1 - p2
+```
+
+## Flipping cTBS2 tissue sample
+```{r}
+flip_transform <- list("10" = list("mirror.x" = T))
+NocTBS4_subset_BatchCorrected <- WarpImages(NocTBS4_subset_BatchCorrected, flip_transform)
+```
+
+# Clustering
+```{r}
+DimPlot(NocTBS4_subset_BatchCorrected, reduction = "pca")
+DimHeatmap(NocTBS4_subset_BatchCorrected, dims = 1:10, cells = 500, balanced = TRUE)
+ElbowPlot(NocTBS4_subset_BatchCorrected, ndims = 40)
+
+NocTBS4_subset_BatchCorrected <- FindNeighbors(object = NocTBS4_subset_BatchCorrected, verbose = FALSE, reduction = "pca", dims = 1:30)
+NocTBS4_subset_BatchCorrected <- FindClusters(object = NocTBS4_subset_BatchCorrected, verbose = FALSE, resolution = 0.2)
+table(NocTBS4_subset_BatchCorrected$SCT_snn_res.0.1) # 7 clusters identified (resolution = 0.1)
+table(NocTBS4_subset_BatchCorrected$SCT_snn_res.0.5) # 16 clusters identified (resolution = 0.5) but no L4 identified
+table(NocTBS4_subset_BatchCorrected$SCT_snn_res.0.6) # 19 clusters identified (resolution = 0.6) but no L4 identified
+table(NocTBS4_subset_BatchCorrected$SCT_snn_res.0.7) # 23 clusters identified (resolution = 0.7)
+
+# Visualisation (at different clustering resolutions)
+ST.FeaturePlot(object = NocTBS4_subset_BatchCorrected, features = "SCT_snn_res.0.1", pt.size = 2.8, ncol = 4, cols = col_vector), indices = 10)
+p1 <- (ST.FeaturePlot(object = NocTBS4_subset_BatchCorrected, features = "SCT_snn_res.0.4", pt.size = 2.8, ncol = 4, cols = col_vector, indices = 10))
+p2 <- (ST.FeaturePlot(object = NocTBS4_subset_BatchCorrected, features = "SCT_snn_res.0.6", pt.size = 2.8, ncol = 4, cols = col_vector, indices = 10)) 
+p3 <- (ST.FeaturePlot(object = NocTBS4_subset_BatchCorrected, features = "SCT_snn_res.0.7", pt.size = 2.8, ncol = 4, cols = col_vector, indices = 10)) 
+grid.arrange(p1, p2, p3, ncol = 3)
+
+# Individual samples clustering
+ST.FeaturePlot(object = NocTBS4_subset_BatchCorrected, features = "SCT_snn_res.0.5", pt.size = 3, cols = col_vector, indices = 11)
+
+# Split clusters 
+ST.FeaturePlot(object = NocTBS4_subset_BatchCorrected, features = "SCT_snn_res.0.5", pt.size = 1.8, ncol = 4, split.labels = T, indices = 5, cols = col_vector)
+```
+
+## Relabelling clusters
+```{r}
+NocTBS4_subset_BatchCorrected$final_labels <- NocTBS4_subset_BatchCorrected$SCT_snn_res.0.5
+levels(NocTBS4_subset_BatchCorrected$final_labels)
+res0.5_annotated_labels <- c("Caudoputamen", "Ctx (layer 5)", "Ctx (layer 2/3)", "Ctx (other regions)", "Striatum ventral region", "Ctx (layer 6)", "Pallidum", "Ctx (layer 1)", "Corpus callosum", "Hypothalamus", "Lateral septal complex", "Unk1", "Lateral ventricle", "Unk2", "Unk3", "Unk4")
+levels(NocTBS4_subset_BatchCorrected$final_labels) <- res0.5_annotated_labels
+
+res0.5_annotated_labels_cols <- c("#B2DF8A", "#E7298A", "#FDBF6F", "#FFF2AE", "#BF5B17", "#386CB0", "#F4CAE4", "#666666", "#8DD3C7", "#BC80BD", "#7570B3", "#999999", "#A6CEE3","#B3B3B3", "#FFD92F", "#6A3D9A")
+
+ST.FeaturePlot(object = NocTBS4_subset_BatchCorrected, features = "final_labels", pt.size = 3, ncol = 4, indices = 1, cols = res0.5_annotated_labels_cols)
+```
+

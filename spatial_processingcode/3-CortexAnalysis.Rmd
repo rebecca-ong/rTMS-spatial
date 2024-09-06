@@ -1,0 +1,484 @@
+---
+title: "3-CortexAnalysis"
+author: "Rebecca Ong"
+date: "05/09/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(STutility)
+library(Seurat)
+library(hdf5r)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(RColorBrewer)
+library(SC3)
+library(pander)
+library(Palo)
+library(limma)
+library(AnnotationDbi)
+library(org.Mm.eg.db)
+```
+
+# Load seurat object
+```{r}
+NocTBS4_subset_BatchCorrected <- readRDS(file.path("file_path", "NocTBS4_subset_BatchCorrected.rds"))
+```
+
+# Subset out clusters that overlay the cortex
+```{r}
+Idents(NocTBS4_subset_BatchCorrected) <- NocTBS4_subset_BatchCorrected$SCT_snn_res.0.5
+levels(NocTBS4_subset_BatchCorrected)
+NocTBS4_cortex <- SubsetSTData(NocTBS4_subset_BatchCorrected, idents = c('2','3','4','6','8'))
+```
+
+# Manual selection of Motor and Sensory cortex spots
+```{r}
+NocTBS4_cortex <- ManualAnnotation(NocTBS4_cortex)
+```
+
+# DEG Analysis (Motor and Sensory cortex)
+Set identities in seurat object so that we can compare between treatment groupså
+```{r}
+Idents(NocTBS4_cortex) <- NocTBS4_cortex$treatment
+levels(NocTBS4_cortex)
+```
+
+## iTBS Motor DEGs
+```{r}
+iTBS_DEG_motor <- SubsetSTData(NocTBS4_cortex, expression = labels == "Motor Cortex") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+
+# annotate
+iTBS_DEG_motor$symbol <- mapIds(org.Mm.eg.db, keys=row.names(iTBS_DEG_motor), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+iTBS_DEG_motor$genename <- mapIds(org.Mm.eg.db, keys=row.names(iTBS_DEG_motor), column="GENENAME", keytype="SYMBOL", multiVals="first")
+iTBS_DEG_motor$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(iTBS_DEG_motor), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+iTBS_DEG_motor <- iTBS_DEG_motor %>% drop_na()
+
+# GO
+iTBS_DEG_motor <- iTBS_DEG_motor[order(iTBS_DEG_motor$p_val_adj),]
+sum(table(iTBS.M_genelist)) <- iTBS_DEG_motor[,8]
+iTBS.M_GO <- enrichGO(iTBS.M_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+```
+
+## iTBS Sensory DEGs
+```{r}
+iTBS_DEG_sensory <- SubsetSTData(NocTBS4_cortex, expression = labels == "Sensory Cortex") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+
+# annotate
+iTBS_DEG_sensory$symbol <- mapIds(org.Mm.eg.db, keys=row.names(iTBS_DEG_sensory), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+iTBS_DEG_sensory$genename <- mapIds(org.Mm.eg.db, keys=row.names(iTBS_DEG_sensory), column="GENENAME", keytype="SYMBOL", multiVals="first")
+iTBS_DEG_sensory$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(iTBS_DEG_sensory), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+iTBS_DEG_sensory <- iTBS_DEG_sensory %>% drop_na()
+
+# GO
+iTBS_DEG_sensory <- iTBS_DEG_sensory[order(iTBS_DEG_sensory$p_val_adj),]
+iTBS.S_genelist <- iTBS_DEG_sensory[,8]
+iTBS.S_GO <- enrichGO(iTBS.S_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+```
+
+## cTBS Motor DEGs
+```{r}
+cTBS_DEG_motor <- SubsetSTData(NocTBS4_cortex, expression = labels == "Motor Cortex") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+# annotate
+cTBS_DEG_motor$symbol <- mapIds(org.Mm.eg.db, keys=row.names(cTBS_DEG_motor), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+cTBS_DEG_motor$genename <- mapIds(org.Mm.eg.db, keys=row.names(cTBS_DEG_motor), column="GENENAME", keytype="SYMBOL", multiVals="first")
+cTBS_DEG_motor$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(cTBS_DEG_motor), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+cTBS_DEG_motor <- cTBS_DEG_motor %>% drop_na()
+
+# GO
+cTBS_DEG_motor <- cTBS_DEG_motor[order(cTBS_DEG_motor$p_val_adj),]
+table(cTBS.M_genelist) <- cTBS_DEG_motor[,8]
+cTBS.M_GO <- enrichGO(cTBS.M_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+```
+
+## cTBS Sensory DEGs
+```{r}
+cTBS_DEG_sensory <- SubsetSTData(NocTBS4_cortex, expression = labels == "Sensory Cortex") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+# annotate
+cTBS_DEG_sensory$symbol <- mapIds(org.Mm.eg.db, keys=row.names(cTBS_DEG_sensory), column="SYMBOL", keytype="SYMBOL", multiVals="first")
+cTBS_DEG_sensory$genename <- mapIds(org.Mm.eg.db, keys=row.names(cTBS_DEG_sensory), column="GENENAME", keytype="SYMBOL", multiVals="first")
+cTBS_DEG_sensory$entrezID <- mapIds(org.Mm.eg.db, keys=row.names(cTBS_DEG_sensory), column="ENTREZID", keytype="SYMBOL", multiVals="first")
+cTBS_DEG_sensory <- cTBS_DEG_sensory %>% drop_na()
+
+# GO
+cTBS_DEG_sensory <- cTBS_DEG_sensory[order(cTBS_DEG_sensory$p_val_adj),]
+cTBS.S_genelist <- cTBS_DEG_sensory[,8]
+cTBS.S_GO <- enrichGO(cTBS.S_genelist, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+```
+
+# Significant DEGs (M1/SS)
+```{r}
+iTBS_DEG_motor_Sig <- subset(iTBS_DEG_motor, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+cTBS_DEG_motor_Sig <- subset(cTBS_DEG_motor, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+iTBS_DEG_sensory_Sig <- subset(iTBS_DEG_sensory, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+cTBS_DEG_sensory_Sig <- subset(cTBS_DEG_sensory, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+```
+
+## Find the porportion of up and down regulated genes out of the significant DEGs
+```{r}
+# subset out rows where fold change is +ve
+iTBS_DEG_motor_Sig_pos <- iTBS_DEG_motor_Sig[iTBS_DEG_motor_Sig[, 2] > 0, ]
+cTBS_DEG_motor_Sig_pos <- cTBS_DEG_motor_Sig[cTBS_DEG_motor_Sig[, 2] > 0, ]
+iTBS_DEG_sensory_Sig_pos <- iTBS_DEG_sensory_Sig[iTBS_DEG_sensory_Sig[, 2] > 0, ]
+cTBS_DEG_sensory_Sig_pos <- cTBS_DEG_sensory_Sig[cTBS_DEG_sensory_Sig[, 2] > 0, ]
+sum(table(rownames(cTBS_DEG_sensory_Sig_pos)))
+
+# subset out rows where fold change is -ve
+iTBS_DEG_motor_Sig_neg <- iTBS_DEG_motor_Sig[iTBS_DEG_motor_Sig[, 2] < 0, ]
+sum(table(iTBS_DEG_motor_Sig_neg))
+cTBS_DEG_motor_Sig_neg <- cTBS_DEG_motor_Sig[cTBS_DEG_motor_Sig[, 2] < 0, ]
+sum(table(rownames(cTBS_DEG_motor_Sig_neg)))
+
+iTBS_DEG_sensory_Sig_neg <- iTBS_DEG_sensory_Sig[iTBS_DEG_sensory_Sig[, 2] < 0, ]
+sum(table(rownames(cTBS_DEG_sensory_Sig_neg)))
+cTBS_DEG_sensory_Sig_neg <- cTBS_DEG_sensory_Sig[cTBS_DEG_sensory_Sig[, 2] < 0, ]
+sum(table(rownames(cTBS_DEG_sensory_Sig_neg)))
+```
+
+# GO (using significant DEGS from M1 and SS that have been separated by up- and down-regulation)
+```{r}
+# GO analysis on DOWN-REGULATED significant DEGs
+iTBS_DEG_motor_Sig_neg <- iTBS_DEG_motor_Sig_neg[order(iTBS_DEG_motor_Sig_neg$p_val_adj),]
+iTBS.M_genelist_Sig_neg <- iTBS_DEG_motor_Sig_neg[,8]
+iTBS.M_GO_Sig_neg <- enrichGO(iTBS.M_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+cTBS_DEG_motor_Sig_neg <- cTBS_DEG_motor_Sig_neg[order(cTBS_DEG_motor_Sig_neg$p_val_adj),]
+cTBS.M_genelist_Sig_neg <- cTBS_DEG_motor_Sig_neg[,8]
+cTBS.M_GO_Sig_neg <- enrichGO(cTBS.M_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+iTBS_DEG_sensory_Sig_neg <- iTBS_DEG_sensory_Sig_neg[order(iTBS_DEG_sensory_Sig_neg$p_val_adj),]
+iTBS.S_genelist_Sig_neg <- iTBS_DEG_sensory_Sig_neg[,8]
+iTBS.S_GO_Sig_neg <- enrichGO(iTBS.S_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+cTBS_DEG_sensory_Sig_neg <- cTBS_DEG_sensory_Sig_neg[order(cTBS_DEG_sensory_Sig_neg$p_val_adj),]
+cTBS.S_genelist_Sig_neg <- cTBS_DEG_sensory_Sig_neg[,8]
+cTBS.S_GO_Sig_neg <- enrichGO(cTBS.S_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+# GO analysis on UP-REGULATED significant DEGs
+iTBS_DEG_motor_Sig_pos <- iTBS_DEG_motor_Sig_pos[order(iTBS_DEG_motor_Sig_pos$p_val_adj),]
+iTBS.M_genelist_Sig_pos <- iTBS_DEG_motor_Sig_pos[,8]
+iTBS.M_GO_Sig_pos <- enrichGO(iTBS.M_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+cTBS_DEG_motor_Sig_pos <- cTBS_DEG_motor_Sig_pos[order(cTBS_DEG_motor_Sig_pos$p_val_adj),]
+cTBS.M_genelist_Sig_pos <- cTBS_DEG_motor_Sig_pos[,8]
+cTBS.M_GO_Sig_pos <- enrichGO(cTBS.M_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+iTBS_DEG_sensory_Sig_pos <- iTBS_DEG_sensory_Sig_pos[order(iTBS_DEG_sensory_Sig_pos$p_val_adj),]
+iTBS.S_genelist_Sig_pos <- iTBS_DEG_sensory_Sig_pos[,8]
+iTBS.S_GO_Sig_pos <- enrichGO(iTBS.S_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+cTBS_DEG_sensory_Sig_pos <- cTBS_DEG_sensory_Sig_pos[order(cTBS_DEG_sensory_Sig_pos$p_val_adj),]
+cTBS.S_genelist_Sig_pos <- cTBS_DEG_sensory_Sig_pos[,8]
+cTBS.S_GO_Sig_pos <- enrichGO(cTBS.S_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+```
+
+# Layer Clustering (cortex region specific)
+Subcluster the Motor and Sensory labelled cortices into specific layers
+
+## Motor Cortex layers
+```{r}
+Idents(NocTBS4_cortex) <- NocTBS4_cortex$labels
+levels(NocTBS4_cortex)
+NocTBS4_motor <- SubsetSTData(NocTBS4_cortex, idents = 'Motor Cortex')
+
+# Re-clustering
+NocTBS4_motor <- FindNeighbors(NocTBS4_motor, reduction = "pca", dims = 1:30)
+NocTBS4_motor <- FindClusters(NocTBS4_motor, verbose = FALSE, resolution = 0.3)
+NocTBS4_motor <- RunUMAP(NocTBS4_motor, reduction = "pca", dims = 1:30)
+
+# Plot motor cortex specific clusters
+motor_cols <- c("#E7298A", "#FDBF6F", "#386CB0", "#666666", "#6A3D9A", "#B3B3B3")
+p <- ST.FeaturePlot(object = NocTBS4_motor, features = "SCT_snn_res.0.3", pt.size = 2.3, ncol = 4, indices = 11, cols = motor_cols)
+
+#UMAP
+DimPlot(NocTBS4_motor, group.by = "SCT_snn_res.0.3", reduction = "umap", pt.size = 1.5, label.size = 2, cols = motor_cols)
+DimPlot(NocTBS4_motor, group.by = "treatment", reduction = "umap", pt.size = 1.5, label.size = 2, cols = treatment_cols)
+
+# Counts per layer
+table(NocTBS4_motor$SCT_snn_res.0.3, NocTBS4_motor$sample)
+
+# DEGs (Motor cortex layer specific)
+Idents(NocTBS4_motor) <- NocTBS4_motor$treatment
+levels(NocTBS4_motor)
+
+iTBSmotor_DEG_L5 <- SubsetSTData(NocTBS4_motor, expression = SCT_snn_res.0.3 == "1") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+cTBSmotor_DEG_L5 <- SubsetSTData(NocTBS4_motor, expression = SCT_snn_res.0.3 == "1") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+iTBSmotor_DEG_L2.3 <- SubsetSTData(NocTBS4_motor, expression = SCT_snn_res.0.3 == "2") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+cTBSmotor_DEG_L2.3 <- SubsetSTData(NocTBS4_motor, expression = SCT_snn_res.0.3 == "2") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+iTBSmotor_DEG_L6 <- SubsetSTData(NocTBS4_motor, expression = SCT_snn_res.0.3 == "3") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+cTBSmotor_DEG_L6 <- SubsetSTData(NocTBS4_motor, expression = SCT_snn_res.0.3 == "3") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+```
+
+## Sensory Cortex layers
+```{r}
+levels(NocTBS4_cortex)
+NocTBS4_sensory <- SubsetSTData(NocTBS4_cortex, idents = 'Sensory Cortex')
+
+# Re-clustering
+NocTBS4_sensory <- FindNeighbors(NocTBS4_sensory, reduction = "pca", dims = 1:30)
+NocTBS4_sensory <- FindClusters(NocTBS4_sensory, verbose = FALSE, resolution = 0.3)
+NocTBS4_sensory <- RunUMAP(NocTBS4_sensory, reduction = "pca", dims = 1:30)
+
+# Plot sensory cortex specific clusters
+sensory_cols <- c("#386CB0", "#E7298A", "#FDBF6F", "#DECBE4", "#666666", "#B3B3B3")
+ST.FeaturePlot(object = NocTBS4_sensory, features = "SCT_snn_res.0.3", pt.size = 2.3, indices = 8, cols = sensory_cols)
+
+#UMAP
+DimPlot(NocTBS4_sensory, group.by = "SCT_snn_res.0.3", reduction = "umap", pt.size = 1.5, label.size = 2, cols = sensory_cols)
+DimPlot(NocTBS4_sensory, group.by = "treatment", reduction = "umap", pt.size = 1.5, label.size = 2, cols = treatment_cols)
+
+# Counts per layer
+table(NocTBS4_sensory$SCT_snn_res.0.3, NocTBS4_sensory$sample)
+
+# DEGs (Sensory cortex layer specific)
+Idents(NocTBS4_sensory) <- NocTBS4_sensory$treatment
+levels(NocTBS4_sensory)
+
+iTBSsensory_DEG_L6 <- SubsetSTData(NocTBS4_sensory, expression = SCT_snn_res.0.3 == "1") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+cTBSsensory_DEG_L6 <- SubsetSTData(NocTBS4_sensory, expression = SCT_snn_res.0.3 == "1") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+iTBSsensory_DEG_L5 <- SubsetSTData(NocTBS4_sensory, expression = SCT_snn_res.0.3 == "2") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+cTBSsensory_DEG_L5 <- SubsetSTData(NocTBS4_sensory, expression = SCT_snn_res.0.3 == "2") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+iTBSsensory_DEG_L2.3 <- SubsetSTData(NocTBS4_sensory, expression = SCT_snn_res.0.3 == "3") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+cTBSsensory_DEG_L2.3 <- SubsetSTData(NocTBS4_sensory, expression = SCT_snn_res.0.3 == "3") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+iTBSsensory_DEG_L4 <- SubsetSTData(NocTBS4_sensory, expression = SCT_snn_res.0.3 == "4") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+cTBSsensory_DEG_L4 <- SubsetSTData(NocTBS4_sensory, expression = SCT_snn_res.0.3 == "4") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+
+iTBSsensory_DEG_L1 <- SubsetSTData(NocTBS4_sensory, expression = SCT_snn_res.0.3 == "5") %>% 
+  FindMarkers(ident.1 = "iTBS", ident.2 = "sham")
+cTBSsensory_DEG_L1 <- SubsetSTData(NocTBS4_sensory, expression = SCT_snn_res.0.3 == "5") %>% 
+  FindMarkers(ident.1 = "cTBS", ident.2 = "sham")
+```
+
+## Significant DEGs (cortical region layer specific)
+```{r}
+iTBSmotor_DEG_L2.3_Sig <- subset(iTBSmotor_DEG_L2.3, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+cTBSmotor_DEG_L2.3_Sig <- subset(cTBSmotor_DEG_L2.3, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+iTBSmotor_DEG_L5_Sig <- subset(iTBSmotor_DEG_L5, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+cTBSmotor_DEG_L5_Sig <- subset(cTBSmotor_DEG_L5, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+iTBSmotor_DEG_L6_Sig <- subset(iTBSmotor_DEG_L6, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+cTBSmotor_DEG_L6_Sig <- subset(cTBSmotor_DEG_L6, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+
+iTBSsensory_DEG_L2.3_Sig <- subset(iTBSsensory_DEG_L2.3, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+cTBSsensory_DEG_L2.3_Sig <- subset(cTBSsensory_DEG_L2.3, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+iTBSsensory_DEG_L4_Sig <- subset(iTBSsensory_DEG_L4, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+cTBSsensory_DEG_L4_Sig <- subset(cTBSsensory_DEG_L4, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+iTBSsensory_DEG_L5_Sig <- subset(iTBSsensory_DEG_L5, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+cTBSsensory_DEG_L5_Sig <- subset(cTBSsensory_DEG_L5, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+iTBSsensory_DEG_L6_Sig <- subset(iTBSsensory_DEG_L6, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+cTBSsensory_DEG_L6_Sig <- subset(cTBSsensory_DEG_L6, p_val_adj <= 0.05 & abs(avg_log2FC) > 0.25)
+```
+
+## Up and Down DEGs (layers, significant)
+Subset out DEGs that are up- and down-regulated from each cortical region (motor and sensory) specific layer
+```{r}
+# M1 layers (+ve FC) -> L2.3, L5, L6
+iTBSmotor_DEG_L2.3_Sig_pos <- iTBSmotor_DEG_L2.3_Sig[iTBSmotor_DEG_L2.3_Sig[, 2] > 0, ]
+cTBSmotor_DEG_L2.3_Sig_pos <- cTBSmotor_DEG_L2.3_Sig[cTBSmotor_DEG_L2.3_Sig[, 2] > 0, ]
+iTBSmotor_DEG_L5_Sig_pos <- iTBSmotor_DEG_L5_Sig[iTBSmotor_DEG_L5_Sig[, 2] > 0, ]
+cTBSmotor_DEG_L5_Sig_pos <- cTBSmotor_DEG_L5_Sig[cTBSmotor_DEG_L5_Sig[, 2] > 0, ]
+iTBSmotor_DEG_L6_Sig_pos <- iTBSmotor_DEG_L6_Sig[iTBSmotor_DEG_L6_Sig[, 2] > 0, ]
+cTBSmotor_DEG_L6_Sig_pos <- cTBSmotor_DEG_L6_Sig[cTBSmotor_DEG_L6_Sig[, 2] > 0, ]
+
+# M1 layers (-ve FC) -> L2.3, L5, L6
+iTBSmotor_DEG_L2.3_Sig_neg <- iTBSmotor_DEG_L2.3_Sig[iTBSmotor_DEG_L2.3_Sig[, 2] < 0, ]
+cTBSmotor_DEG_L2.3_Sig_neg <- cTBSmotor_DEG_L2.3_Sig[cTBSmotor_DEG_L2.3_Sig[, 2] < 0, ]
+iTBSmotor_DEG_L5_Sig_neg <- iTBSmotor_DEG_L5_Sig[iTBSmotor_DEG_L5_Sig[, 2] < 0, ]
+cTBSmotor_DEG_L5_Sig_neg <- cTBSmotor_DEG_L5_Sig[cTBSmotor_DEG_L5_Sig[, 2] < 0, ]
+iTBSmotor_DEG_L6_Sig_neg <- iTBSmotor_DEG_L6_Sig[iTBSmotor_DEG_L6_Sig[, 2] < 0, ]
+cTBSmotor_DEG_L6_Sig_neg <- cTBSmotor_DEG_L6_Sig[cTBSmotor_DEG_L6_Sig[, 2] < 0, ]
+
+# SS layers (+ve FC) -> L2.3, L4, L5, L6
+iTBSsensory_DEG_L2.3_Sig_pos <- iTBSsensory_DEG_L2.3_Sig[iTBSsensory_DEG_L2.3_Sig[, 2] > 0, ]
+cTBSsensory_DEG_L2.3_Sig_pos <- cTBSsensory_DEG_L2.3_Sig[cTBSsensory_DEG_L2.3_Sig[, 2] > 0, ]
+iTBSsensory_DEG_L4_Sig_pos <- iTBSsensory_DEG_L4_Sig[iTBSsensory_DEG_L4_Sig[, 2] > 0, ]
+cTBSsensory_DEG_L4_Sig_pos <- cTBSsensory_DEG_L4_Sig[cTBSsensory_DEG_L4_Sig[, 2] > 0, ]
+iTBSsensory_DEG_L5_Sig_pos <- iTBSsensory_DEG_L5_Sig[iTBSsensory_DEG_L5_Sig[, 2] > 0, ]
+cTBSsensory_DEG_L5_Sig_pos <- cTBSsensory_DEG_L5_Sig[cTBSsensory_DEG_L5_Sig[, 2] > 0, ]
+iTBSsensory_DEG_L6_Sig_pos <- iTBSsensory_DEG_L6_Sig[iTBSsensory_DEG_L6_Sig[, 2] > 0, ]
+cTBSsensory_DEG_L6_Sig_pos <- cTBSsensory_DEG_L6_Sig[cTBSsensory_DEG_L6_Sig[, 2] > 0, ]
+
+# SS layers (-ve FC) -> L2.3, L4, L5, L6
+iTBSsensory_DEG_L2.3_Sig_neg <- iTBSsensory_DEG_L2.3_Sig[iTBSsensory_DEG_L2.3_Sig[, 2] < 0, ]
+cTBSsensory_DEG_L2.3_Sig_neg <- cTBSsensory_DEG_L2.3_Sig[cTBSsensory_DEG_L2.3_Sig[, 2] < 0, ]
+iTBSsensory_DEG_L4_Sig_neg <- iTBSsensory_DEG_L4_Sig[iTBSsensory_DEG_L4_Sig[, 2] < 0, ]
+cTBSsensory_DEG_L4_Sig_neg <- cTBSsensory_DEG_L4_Sig[cTBSsensory_DEG_L4_Sig[, 2] < 0, ]
+iTBSsensory_DEG_L5_Sig_neg <- iTBSsensory_DEG_L5_Sig[iTBSsensory_DEG_L5_Sig[, 2] < 0, ]
+cTBSsensory_DEG_L5_Sig_neg <- cTBSsensory_DEG_L5_Sig[cTBSsensory_DEG_L5_Sig[, 2] < 0, ]
+iTBSsensory_DEG_L6_Sig_neg <- iTBSsensory_DEG_L6_Sig[iTBSsensory_DEG_L6_Sig[, 2] < 0, ]
+cTBSsensory_DEG_L6_Sig_neg <- cTBSsensory_DEG_L6_Sig[cTBSsensory_DEG_L6_Sig[, 2] < 0, ]
+```
+
+## GO (layers, significant, up- and down-regulated DEGs)
+```{r}
+# M1 layers UPregulated pathways (L2.3, L5, L6)
+## iTBS M1 L2.3
+iTBSmotor_DEG_L2.3_Sig_pos <- iTBSmotor_DEG_L2.3_Sig_pos[order(iTBSmotor_DEG_L2.3_Sig_pos$p_val_adj),]
+iTBS.M_L2.3_genelist_Sig_pos <- iTBSmotor_DEG_L2.3_Sig_pos[,7]
+iTBS.M_L2.3_GO_Sig_pos <- enrichGO(iTBS.M_L2.3_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## cTBS M1 L2.3
+cTBSmotor_DEG_L2.3_Sig_pos <- cTBSmotor_DEG_L2.3_Sig_pos[order(cTBSmotor_DEG_L2.3_Sig_pos$p_val_adj),]
+cTBS.M_L2.3_genelist_Sig_pos <- cTBSmotor_DEG_L2.3_Sig_pos[,7]
+cTBS.M_L2.3_GO_Sig_pos <- enrichGO(cTBS.M_L2.3_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## iTBS M1 L5
+iTBSmotor_DEG_L5_Sig_pos <- iTBSmotor_DEG_L5_Sig_pos[order(iTBSmotor_DEG_L5_Sig_pos$p_val_adj),]
+iTBS.M_L5_genelist_Sig_pos <- iTBSmotor_DEG_L5_Sig_pos[,7]
+iTBS.M_L5_GO_Sig_pos <- enrichGO(iTBS.M_L5_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## cTBS M1 L5
+cTBSmotor_DEG_L5_Sig_pos <- cTBSmotor_DEG_L5_Sig_pos[order(cTBSmotor_DEG_L5_Sig_pos$p_val_adj),]
+cTBS.M_L5_genelist_Sig_pos <- cTBSmotor_DEG_L5_Sig_pos[,7]
+cTBS.M_L5_GO_Sig_pos <- enrichGO(cTBS.M_L5_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## iTBS M1 L6
+iTBSmotor_DEG_L6_Sig_pos <- iTBSmotor_DEG_L6_Sig_pos[order(iTBSmotor_DEG_L6_Sig_pos$p_val_adj),]
+iTBS.M_L6_genelist_Sig_pos <- iTBSmotor_DEG_L6_Sig_pos[,7]
+iTBS.M_L6_GO_Sig_pos <- enrichGO(iTBS.M_L6_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## cTBS M1 L6
+cTBSmotor_DEG_L6_Sig_pos <- cTBSmotor_DEG_L6_Sig_pos[order(cTBSmotor_DEG_L6_Sig_pos$p_val_adj),]
+cTBS.M_L6_genelist_Sig_pos <- cTBSmotor_DEG_L6_Sig_pos[,7]
+cTBS.M_L6_GO_Sig_pos <- enrichGO(cTBS.M_L6_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+# M1 layers DOWNregulated pathways (L2.3, L5, L6)
+## iTBS M1 L2.3
+iTBSmotor_DEG_L2.3_Sig_neg <- iTBSmotor_DEG_L2.3_Sig_neg[order(iTBSmotor_DEG_L2.3_Sig_neg$p_val_adj),]
+iTBS.M_L2.3_genelist_Sig_neg <- iTBSmotor_DEG_L2.3_Sig_neg[,7]
+iTBS.M_L2.3_GO_Sig_neg <- enrichGO(iTBS.M_L2.3_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## cTBS M1 L2.3
+cTBSmotor_DEG_L2.3_Sig_neg <- cTBSmotor_DEG_L2.3_Sig_neg[order(cTBSmotor_DEG_L2.3_Sig_neg$p_val_adj),]
+cTBS.M_L2.3_genelist_Sig_neg <- cTBSmotor_DEG_L2.3_Sig_neg[,7]
+cTBS.M_L2.3_GO_Sig_neg <- enrichGO(cTBS.M_L2.3_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## iTBS M1 L5
+iTBSmotor_DEG_L5_Sig_neg <- iTBSmotor_DEG_L5_Sig_neg[order(iTBSmotor_DEG_L5_Sig_neg$p_val_adj),]
+iTBS.M_L5_genelist_Sig_neg <- iTBSmotor_DEG_L5_Sig_neg[,7]
+iTBS.M_L5_GO_Sig_neg <- enrichGO(iTBS.M_L5_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## cTBS M1 L5
+cTBSmotor_DEG_L5_Sig_neg <- cTBSmotor_DEG_L5_Sig_neg[order(cTBSmotor_DEG_L5_Sig_neg$p_val_adj),]
+cTBS.M_L5_genelist_Sig_neg <- cTBSmotor_DEG_L5_Sig_neg[,7]
+cTBS.M_L5_GO_Sig_neg <- enrichGO(cTBS.M_L5_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## iTBS M1 L6
+iTBSmotor_DEG_L6_Sig_neg <- iTBSmotor_DEG_L6_Sig_neg[order(iTBSmotor_DEG_L6_Sig_neg$p_val_adj),]
+iTBS.M_L6_genelist_Sig_neg <- iTBSmotor_DEG_L6_Sig_neg[,7]
+iTBS.M_L6_GO_Sig_neg <- enrichGO(iTBS.M_L6_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## cTBS M1 L6
+cTBSmotor_DEG_L6_Sig_neg <- cTBSmotor_DEG_L6_Sig_neg[order(cTBSmotor_DEG_L6_Sig_neg$p_val_adj),]
+cTBS.M_L6_genelist_Sig_neg <- cTBSmotor_DEG_L6_Sig_neg[,7]
+cTBS.M_L6_GO_Sig_neg <- enrichGO(cTBS.M_L6_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+# SS layers UPregulated pathways (L2.3, L4, L5, L6)
+## iTBS SS L2.3
+iTBSsensory_DEG_L2.3_Sig_pos <- iTBSsensory_DEG_L2.3_Sig_pos[order(iTBSsensory_DEG_L2.3_Sig_pos$p_val_adj),]
+iTBS.S_L2.3_genelist_Sig_pos <- iTBSsensory_DEG_L2.3_Sig_pos[,7]
+iTBS.S_L2.3_GO_Sig_pos <- enrichGO(iTBS.S_L2.3_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## cTBS SS L2.3
+cTBSsensory_DEG_L2.3_Sig_pos <- cTBSsensory_DEG_L2.3_Sig_pos[order(cTBSsensory_DEG_L2.3_Sig_pos$p_val_adj),]
+cTBS.S_L2.3_genelist_Sig_pos <- cTBSsensory_DEG_L2.3_Sig_pos[,7]
+cTBS.S_L2.3_GO_Sig_pos <- enrichGO(cTBS.S_L2.3_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## iTBS SS L4
+iTBSsensory_DEG_L4_Sig_pos <- iTBSsensory_DEG_L4_Sig_pos[order(iTBSsensory_DEG_L4_Sig_pos$p_val_adj),]
+iTBS.S_L4_genelist_Sig_pos <- iTBSsensory_DEG_L4_Sig_pos[,7]
+iTBS.S_L4_GO_Sig_pos <- enrichGO(iTBS.S_L4_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## cTBS SS L4
+cTBSsensory_DEG_L4_Sig_pos <- cTBSsensory_DEG_L4_Sig_pos[order(cTBSsensory_DEG_L4_Sig_pos$p_val_adj),]
+cTBS.S_L4_genelist_Sig_pos <- cTBSsensory_DEG_L4_Sig_pos[,7]
+cTBS.S_L4_GO_Sig_pos <- enrichGO(cTBS.S_L4_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## iTBS SS L5
+iTBSsensory_DEG_L5_Sig_pos <- iTBSsensory_DEG_L5_Sig_pos[order(iTBSsensory_DEG_L5_Sig_pos$p_val_adj),]
+iTBS.S_L5_genelist_Sig_pos <- iTBSsensory_DEG_L5_Sig_pos[,7]
+iTBS.S_L5_GO_Sig_pos <- enrichGO(iTBS.S_L5_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## cTBS SS L5
+cTBSsensory_DEG_L5_Sig_pos <- cTBSsensory_DEG_L5_Sig_pos[order(cTBSsensory_DEG_L5_Sig_pos$p_val_adj),]
+cTBS.S_L5_genelist_Sig_pos <- cTBSsensory_DEG_L5_Sig_pos[,7]
+cTBS.S_L5_GO_Sig_pos <- enrichGO(cTBS.S_L5_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## iTBS SS L6
+iTBSsensory_DEG_L6_Sig_pos <- iTBSsensory_DEG_L6_Sig_pos[order(iTBSsensory_DEG_L6_Sig_pos$p_val_adj),]
+iTBS.S_L6_genelist_Sig_pos <- iTBSsensory_DEG_L6_Sig_pos[,7]
+iTBS.S_L6_GO_Sig_pos <- enrichGO(iTBS.S_L6_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## cTBS SS L6
+cTBSsensory_DEG_L6_Sig_pos <- cTBSsensory_DEG_L6_Sig_pos[order(cTBSsensory_DEG_L6_Sig_pos$p_val_adj),]
+cTBS.S_L6_genelist_Sig_pos <- cTBSsensory_DEG_L6_Sig_pos[,7]
+cTBS.S_L6_GO_Sig_pos <- enrichGO(cTBS.S_L6_genelist_Sig_pos, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+# SS layers DOWNregulated pathways (L2.3, L4, L5, L6)
+## iTBS SS L2.3
+iTBSsensory_DEG_L2.3_Sig_neg <- iTBSsensory_DEG_L2.3_Sig_neg[order(iTBSsensory_DEG_L2.3_Sig_neg$p_val_adj),]
+iTBS.S_L2.3_genelist_Sig_neg <- iTBSsensory_DEG_L2.3_Sig_neg[,7]
+iTBS.S_L2.3_GO_Sig_neg <- enrichGO(iTBS.S_L2.3_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## cTBS SS L2.3
+cTBSsensory_DEG_L2.3_Sig_neg <- cTBSsensory_DEG_L2.3_Sig_neg[order(cTBSsensory_DEG_L2.3_Sig_neg$p_val_adj),]
+cTBS.S_L2.3_genelist_Sig_neg <- cTBSsensory_DEG_L2.3_Sig_neg[,7]
+cTBS.S_L2.3_GO_Sig_neg <- enrichGO(cTBS.S_L2.3_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## iTBS SS L4
+iTBSsensory_DEG_L4_Sig_neg <- iTBSsensory_DEG_L4_Sig_neg[order(iTBSsensory_DEG_L4_Sig_neg$p_val_adj),]
+iTBS.S_L4_genelist_Sig_neg <- iTBSsensory_DEG_L4_Sig_neg[,7]
+iTBS.S_L4_GO_Sig_neg <- enrichGO(iTBS.S_L4_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## cTBS SS L4
+cTBSsensory_DEG_L4_Sig_neg <- cTBSsensory_DEG_L4_Sig_neg[order(cTBSsensory_DEG_L4_Sig_neg$p_val_adj),]
+cTBS.S_L4_genelist_Sig_neg <- cTBSsensory_DEG_L4_Sig_neg[,7]
+cTBS.S_L4_GO_Sig_neg <- enrichGO(cTBS.S_L4_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## iTBS SS L5
+iTBSsensory_DEG_L5_Sig_neg <- iTBSsensory_DEG_L5_Sig_neg[order(iTBSsensory_DEG_L5_Sig_neg$p_val_adj),]
+iTBS.S_L5_genelist_Sig_neg <- iTBSsensory_DEG_L5_Sig_neg[,7]
+iTBS.S_L5_GO_Sig_neg <- enrichGO(iTBS.S_L5_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## cTBS SS L5
+cTBSsensory_DEG_L5_Sig_neg <- cTBSsensory_DEG_L5_Sig_neg[order(cTBSsensory_DEG_L5_Sig_neg$p_val_adj),]
+cTBS.S_L5_genelist_Sig_neg <- cTBSsensory_DEG_L5_Sig_neg[,7]
+cTBS.S_L5_GO_Sig_neg <- enrichGO(cTBS.S_L5_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## iTBS SS L6
+iTBSsensory_DEG_L6_Sig_neg <- iTBSsensory_DEG_L6_Sig_neg[order(iTBSsensory_DEG_L6_Sig_neg$p_val_adj),]
+iTBS.S_L6_genelist_Sig_neg <- iTBSsensory_DEG_L6_Sig_neg[,7]
+iTBS.S_L6_GO_Sig_neg <- enrichGO(iTBS.S_L6_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+## cTBS SS L6
+cTBSsensory_DEG_L6_Sig_neg <- cTBSsensory_DEG_L6_Sig_neg[order(cTBSsensory_DEG_L6_Sig_neg$p_val_adj),]
+cTBS.S_L6_genelist_Sig_neg <- cTBSsensory_DEG_L6_Sig_neg[,7]
+cTBS.S_L6_GO_Sig_neg <- enrichGO(cTBS.S_L6_genelist_Sig_neg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID", ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+```
+
