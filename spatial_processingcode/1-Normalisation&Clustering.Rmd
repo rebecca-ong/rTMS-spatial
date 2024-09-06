@@ -1,5 +1,6 @@
 ---
 title: "1-Normalisation&Clustering"
+Script used to integrate, normalise and cluster the spatial transcriptomics data obtained from 4 sham, 4 iTBS and 4 cTBS treated coronal male mouse brain sections. 
 ---
 
 ```{r setup, include=FALSE}
